@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { usePerspective } from "@/lib/perspective-context";
-import { AHMEDABAD_LISTINGS, ProsumerListing } from "@/lib/demo-data";
+import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api-client";
 import { formatINR, formatKWh, formatDistance, calculateDistanceKm } from "@/lib/utils";
 import {
   Search,
@@ -25,36 +26,85 @@ import {
 
 export default function MarketplacePage() {
   const { perspective, activeUser, isConsumer, isProsumer } = usePerspective();
+  const { user } = useAuth();
+  const [rawListings, setRawListings] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [maxPrice, setMaxPrice] = useState(7.5);
   const [maxDistance, setMaxDistance] = useState(15.0);
-  const [minReliability, setMinReliability] = useState(80.0);
+  const [minReliability, setMinReliability] = useState(70.0);
   const [selectedSubstation, setSelectedSubstation] = useState<string>("ALL");
   const [selectedSource, setSelectedSource] = useState<string>("ALL");
 
-  const listingsWithDynamicDistance = useMemo(() => {
-    return AHMEDABAD_LISTINGS.map((item) => {
-      const dist = calculateDistanceKm(
-        activeUser.location.lat,
-        activeUser.location.lng,
-        item.location.lat,
-        item.location.lng
-      );
+  useEffect(() => {
+    setIsLoading(true);
+    // Use user coordinates or active perspective coordinates
+    const lat = user?.latitude || activeUser.location.lat;
+    const lng = user?.longitude || activeUser.location.lng;
+
+    api.getNearbyListings({ latitude: lat, longitude: lng, radius_km: 30 })
+      .then((data) => {
+        setRawListings(data);
+      })
+      .catch((err) => {
+        console.warn("Falling back to getListings():", err);
+        return api.getListings().then(setRawListings);
+      })
+      .catch((err) => {
+        console.error("Failed to load marketplace listings:", err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [user, activeUser]);
+
+  const listingsWithDistance = useMemo(() => {
+    const userLat = user?.latitude || activeUser.location.lat;
+    const userLng = user?.longitude || activeUser.location.lng;
+
+    return rawListings.map((item) => {
+      const itemLat = item.latitude ?? 23.0384;
+      const itemLng = item.longitude ?? 72.5122;
+      const dist =
+        item.distance_km !== undefined && item.distance_km !== null
+          ? Number(item.distance_km)
+          : calculateDistanceKm(userLat, userLng, itemLat, itemLng);
+
       return {
-        ...item,
+        id: item.id,
+        title: item.title,
+        prosumerId: item.prosumer_id,
+        prosumerName: item.prosumer_name || "Renewable Prosumer",
+        energyAvailableKwh: item.energy_available_kwh,
+        energyRemainingKwh: item.energy_remaining_kwh ?? item.energy_available_kwh,
+        pricePerKwh: item.price_per_kwh,
+        sourceType: item.source_type || "solar_rooftop",
+        sourceLabel:
+          item.source_type === "solar_battery"
+            ? "Solar + BESS"
+            : item.source_type === "microgrid_solar"
+            ? "Microgrid Array"
+            : "Rooftop Solar",
+        gridSubstationId: item.grid_substation_id || "AHMEDABAD_SUB_ZONE_1",
+        sellerReliabilityScore: item.seller_reliability_score ?? 95.0,
+        completedTrades: item.completed_trades ?? 12,
+        availableFrom: item.available_from,
+        availableTo: item.available_to,
+        latitude: itemLat,
+        longitude: itemLng,
         distanceKm: dist,
-        isOwnListing: item.prosumerId === activeUser.id,
+        isOwnListing: user?.id === item.prosumer_id,
       };
     });
-  }, [activeUser]);
+  }, [rawListings, user, activeUser]);
 
   const filteredListings = useMemo(() => {
-    return listingsWithDynamicDistance.filter((item) => {
+    return listingsWithDistance.filter((item) => {
       const matchesSearch =
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.prosumerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.location.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.location.neighborhood.toLowerCase().includes(searchQuery.toLowerCase());
+        item.gridSubstationId.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesPrice = item.pricePerKwh <= maxPrice;
       const matchesDistance = item.distanceKm <= maxDistance;
@@ -73,7 +123,7 @@ export default function MarketplacePage() {
         matchesSource
       );
     });
-  }, [listingsWithDynamicDistance, searchQuery, maxPrice, maxDistance, minReliability, selectedSubstation, selectedSource]);
+  }, [listingsWithDistance, searchQuery, maxPrice, maxDistance, minReliability, selectedSubstation, selectedSource]);
 
   return (
     <div className="space-y-6">
@@ -83,19 +133,19 @@ export default function MarketplacePage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
             Renewable Energy Marketplace
             <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Live Ahmedabad P2P Orderbook
+              Live PostGIS Ahmedabad Orderbook
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
             {isConsumer ? (
               <>
-                Viewing available prosumer offers from your anchor at{" "}
+                Viewing prosumer supply broadcasts from your consumer node at{" "}
                 <span className="text-slate-200 font-semibold">{activeUser.location.neighborhood}</span> on{" "}
                 <span className="font-mono text-indigo-400">{activeUser.substation}</span>.
               </>
             ) : (
               <>
-                Viewing market orders as Prosumer{" "}
+                Viewing market supply as Prosumer{" "}
                 <span className="text-slate-200 font-semibold">{activeUser.name}</span> ({activeUser.location.neighborhood}) on{" "}
                 <span className="font-mono text-indigo-400">{activeUser.substation}</span>.
               </>
@@ -114,11 +164,11 @@ export default function MarketplacePage() {
             </Link>
           ) : (
             <Link
-              href="/matching"
+              href="/listings"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-amber-500/20 glow-amber"
             >
-              <Sparkles className="h-4 w-4" />
-              <span>Inspect Buyer Demands</span>
+              <PlusCircle className="h-4 w-4" />
+              <span>Publish Solar Supply</span>
             </Link>
           )}
         </div>
@@ -132,7 +182,7 @@ export default function MarketplacePage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by prosumer name, neighborhood, or solar array type..."
+              placeholder="Search by listing title, prosumer, or substation feeder..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
@@ -183,13 +233,13 @@ export default function MarketplacePage() {
 
           <div>
             <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-              <span>Max Distance Radius</span>
+              <span>Max PostGIS Radius</span>
               <span className="font-mono font-bold text-indigo-400">{maxDistance.toFixed(0)} km</span>
             </div>
             <input
               type="range"
               min="2"
-              max="25"
+              max="30"
               step="1"
               value={maxDistance}
               onChange={(e) => setMaxDistance(parseFloat(e.target.value))}
@@ -204,7 +254,7 @@ export default function MarketplacePage() {
             </div>
             <input
               type="range"
-              min="70"
+              min="60"
               max="100"
               step="1"
               value={minReliability}
@@ -227,7 +277,11 @@ export default function MarketplacePage() {
           </Link>
         </div>
 
-        {filteredListings.length === 0 ? (
+        {isLoading ? (
+          <div className="p-12 text-center rounded-2xl bg-slate-900/60 border border-slate-800 text-slate-400 text-xs">
+            Querying live PostGIS marketplace listings...
+          </div>
+        ) : filteredListings.length === 0 ? (
           <div className="p-12 text-center rounded-2xl bg-slate-900/60 border border-slate-800">
             <Zap className="h-8 w-8 text-slate-600 mx-auto mb-2" />
             <h3 className="text-sm font-semibold text-slate-300">No Listings Match Current Filter</h3>
@@ -238,7 +292,7 @@ export default function MarketplacePage() {
               onClick={() => {
                 setMaxPrice(7.5);
                 setMaxDistance(15.0);
-                setMinReliability(80.0);
+                setMinReliability(70.0);
                 setSelectedSubstation("ALL");
                 setSelectedSource("ALL");
                 setSearchQuery("");
@@ -277,14 +331,14 @@ export default function MarketplacePage() {
                       </span>
                       {listing.isOwnListing && (
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          Your Active Listing
+                          Your Listing
                         </span>
                       )}
                     </div>
 
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       <ShieldCheck className="h-3 w-3" />
-                      {listing.sellerReliabilityScore}% Trust
+                      {Number(listing.sellerReliabilityScore).toFixed(0)}% Trust
                     </span>
                   </div>
 
@@ -297,7 +351,7 @@ export default function MarketplacePage() {
                       {listing.isOwnListing ? `${listing.prosumerName} (You)` : listing.prosumerName}
                     </span>
                     <span>•</span>
-                    <span className="font-mono text-indigo-400">{listing.gridSubstationId}</span>
+                    <span className="font-mono text-indigo-400 text-[11px]">{listing.gridSubstationId}</span>
                   </p>
 
                   {/* Energy & Price Key Numbers */}
@@ -323,7 +377,7 @@ export default function MarketplacePage() {
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-1">
                         <MapPin className="h-3 w-3 text-emerald-400" />
-                        {listing.location.address}
+                        Ahmedabad PostGIS Node
                       </span>
                       <span className="font-mono font-medium text-slate-200">
                         {listing.isOwnListing ? "Local Origin" : formatDistance(listing.distanceKm)}
@@ -333,10 +387,11 @@ export default function MarketplacePage() {
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3 text-amber-400" />
-                        {listing.availableHours}
+                        {listing.availableFrom ? new Date(listing.availableFrom).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--"} -{" "}
+                        {listing.availableTo ? new Date(listing.availableTo).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--"}
                       </span>
                       <span className="text-[10px] text-emerald-400 font-medium">
-                        {listing.completedTrades} verified deliveries
+                        {listing.completedTrades} verified trades
                       </span>
                     </div>
                   </div>
@@ -345,7 +400,7 @@ export default function MarketplacePage() {
                 {/* Actions */}
                 <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                   <Link
-                    href={`/map?prosumer=${listing.id}`}
+                    href={`/map?listing=${listing.id}`}
                     className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
                   >
                     Locate on Map
@@ -353,10 +408,10 @@ export default function MarketplacePage() {
 
                   {listing.isOwnListing ? (
                     <Link
-                      href={`/dashboard`}
+                      href={`/listings`}
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-colors shrink-0"
                     >
-                      <span>Manage Node</span>
+                      <span>Manage Listing</span>
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   ) : (
@@ -364,7 +419,7 @@ export default function MarketplacePage() {
                       href={`/matching`}
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shrink-0"
                     >
-                      <span>Instant Match</span>
+                      <span>Match Demand</span>
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   )}

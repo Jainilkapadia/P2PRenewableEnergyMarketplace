@@ -80,9 +80,44 @@ export const api = {
   // Listings
   getListings: () => fetchFromApi<any[]>("/listings/"),
   getMyListings: () => fetchFromApi<any[]>("/listings/my"),
+  getListingById: (id: string) => fetchFromApi<any>(`/listings/${id}`),
+  getNearbyListings: (params: { latitude: number; longitude: number; radius_km?: number }) => {
+    const query = new URLSearchParams({
+      latitude: params.latitude.toString(),
+      longitude: params.longitude.toString(),
+      ...(params.radius_km ? { radius_km: params.radius_km.toString() } : {}),
+    });
+    return fetchFromApi<any[]>(`/listings/nearby?${query.toString()}`);
+  },
+  createListing: (payload: any) =>
+    fetchFromApi<any>("/listings/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateListing: (id: string, payload: any) =>
+    fetchFromApi<any>(`/listings/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteListing: (id: string) =>
+    fetchFromApi<any>(`/listings/${id}`, {
+      method: "DELETE",
+    }),
   
   // Requirements
+  getRequirements: () => fetchFromApi<any[]>("/requirements/"),
   getMyRequirements: () => fetchFromApi<any[]>("/requirements/my"),
+  getRequirementById: (id: string) => fetchFromApi<any>(`/requirements/${id}`),
+  createRequirement: (payload: any) =>
+    fetchFromApi<any>("/requirements/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteRequirement: (id: string) =>
+    fetchFromApi<any>(`/requirements/${id}`, {
+      method: "DELETE",
+    }),
+
   
   // Matching Engine
   findMatches: (payload: any) => fetchFromApi<any>("/matching/find-matches", {

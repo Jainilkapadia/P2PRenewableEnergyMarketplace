@@ -99,13 +99,13 @@ export default function DashboardPage() {
                 <MapPin className="h-4 w-4 text-amber-400" />
                 <span>Market Map</span>
               </Link>
-              <button
-                onClick={() => setShowCreateModal(true)}
+              <Link
+                href="/listings"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs transition-all shadow-lg shadow-amber-500/20 glow-amber"
               >
                 <PlusCircle className="h-4 w-4" />
                 <span>Create Energy Listing</span>
-              </button>
+              </Link>
             </>
           )}
 
@@ -118,13 +118,13 @@ export default function DashboardPage() {
                 <MapPin className="h-4 w-4 text-indigo-400" />
                 <span>Find Energy</span>
               </Link>
-              <button
-                onClick={() => setShowCreateModal(true)}
+              <Link
+                href="/listings"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-500/20"
               >
                 <ListPlus className="h-4 w-4" />
-                <span>Create Listing</span>
-              </button>
+                <span>Manage Listings</span>
+              </Link>
             </>
           )}
         </div>
@@ -579,12 +579,12 @@ export default function DashboardPage() {
                   >
                     View Listing
                   </Link>
-                  <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all"
+                  <Link
+                    href="/listings"
+                    className="flex-1 text-center py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all"
                   >
-                    Update Surplus
-                  </button>
+                    Manage Surplus
+                  </Link>
                 </div>
               </div>
 

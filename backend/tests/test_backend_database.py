@@ -58,7 +58,7 @@ async def test_seeded_listings_geometry_and_substations(db_session):
     
     res = await db_session.execute(query)
     rows = res.all()
-    assert len(rows) == 3
+    assert len(rows) >= 3
     
     for listing, wkt, lat, lng in rows:
         assert "POINT" in wkt

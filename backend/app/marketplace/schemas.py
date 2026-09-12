@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -10,9 +10,32 @@ class EnergyListingCreate(BaseModel):
     available_from: datetime
     available_to: datetime
     source_type: Optional[str] = "solar_rooftop"
-    latitude: float = 23.0225
-    longitude: float = 72.5714
+    latitude: float = Field(ge=-90.0, le=90.0, default=23.0384)
+    longitude: float = Field(ge=-180.0, le=180.0, default=72.5122)
     grid_substation_id: Optional[str] = "AHMEDABAD_SUB_ZONE_1"
+
+    @model_validator(mode="after")
+    def validate_time_window(self):
+        if self.available_to <= self.available_from:
+            raise ValueError("available_to must be after available_from")
+        return self
+
+class EnergyListingUpdate(BaseModel):
+    title: Optional[str] = None
+    energy_available_kwh: Optional[float] = Field(None, gt=0)
+    energy_remaining_kwh: Optional[float] = Field(None, ge=0)
+    price_per_kwh: Optional[float] = Field(None, gt=0)
+    available_from: Optional[datetime] = None
+    available_to: Optional[datetime] = None
+    source_type: Optional[str] = None
+    grid_substation_id: Optional[str] = None
+    status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_time_window(self):
+        if self.available_from and self.available_to and self.available_to <= self.available_from:
+            raise ValueError("available_to must be after available_from")
+        return self
 
 class EnergyListingResponse(BaseModel):
     id: UUID
