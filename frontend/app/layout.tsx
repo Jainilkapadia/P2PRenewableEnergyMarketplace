@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/lib/auth-context";
 import { PerspectiveProvider } from "@/lib/perspective-context";
 
 const inter = Inter({
@@ -26,9 +27,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark antialiased`}>
       <body className="min-h-screen bg-[#080d1a] text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200">
-        <PerspectiveProvider>
-          {children}
-        </PerspectiveProvider>
+        <AuthProvider>
+          <PerspectiveProvider>
+            {children}
+          </PerspectiveProvider>
+        </AuthProvider>
       </body>
     </html>
   );

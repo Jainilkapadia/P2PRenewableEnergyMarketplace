@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { formatINR, formatKWh, shortenHash } from "@/lib/utils";
 import { usePerspective } from "@/lib/perspective-context";
+import { TradeRecord } from "@/lib/demo-data";
 import {
   ArrowLeftRight,
   ShieldCheck,
@@ -18,7 +19,9 @@ import {
 
 export default function TradesPage() {
   const { perspective, activeUser, isConsumer, isProsumer } = usePerspective();
-  const [selectedTradeId, setSelectedTradeId] = useState<string>("trade-001");
+  const [selectedTradeId, setSelectedTradeId] = useState<string>("001");
+
+  const selectedTrade = activeUser.recentTrades.find((t) => t.id === selectedTradeId) || activeUser.recentTrades[0];
 
   return (
     <div className="space-y-6">
@@ -26,13 +29,13 @@ export default function TradesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            P2P Energy Trades & Orderbook
-            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Escrow Protected
+            Active P2P Trades
+            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              Dual-Signature Ledger
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Active peer trades, dual digital signing status, and cryptographic settlement receipts in Ahmedabad.
+            Cryptographically committed energy delivery contracts on Ahmedabad Substation
           </p>
         </div>
 
@@ -174,7 +177,7 @@ export default function TradesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-mono text-slate-200">
-              {activeUser.recentTrades.map((trade) => (
+              {activeUser.recentTrades.map((trade: TradeRecord) => (
                 <tr key={trade.id} className="hover:bg-slate-800/40">
                   <td className="py-3 font-bold text-slate-100">#{trade.id}</td>
                   <td className="py-3 font-sans font-medium text-slate-200">

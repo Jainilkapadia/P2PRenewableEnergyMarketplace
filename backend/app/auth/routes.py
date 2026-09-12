@@ -13,6 +13,8 @@ from app.config import settings
 from app.models import User, Wallet, ReliabilityScore, UserKey
 from app.auth.schemas import UserRegister, UserLogin, Token, UserResponse, KeyRegister
 
+from geoalchemy2.functions import ST_X, ST_Y
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 async def get_current_user(
@@ -53,11 +55,16 @@ async def register_user(user_in: UserRegister, db: AsyncSession = Depends(get_db
     if user_in.latitude is not None and user_in.longitude is not None:
         geom_point = f"SRID=4326;POINT({user_in.longitude} {user_in.latitude})"
 
+    # Disallow public self-registration as admin
+    assigned_role = (user_in.role or "dual").lower()
+    if assigned_role not in ["consumer", "prosumer", "dual"]:
+        assigned_role = "dual"
+
     new_user = User(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         full_name=user_in.full_name,
-        role=user_in.role or "dual",
+        role=assigned_role,
         location=geom_point,
         address_text=user_in.address_text,
         grid_substation_id=user_in.grid_substation_id or "AHMEDABAD_SUB_ZONE_1",
@@ -65,8 +72,8 @@ async def register_user(user_in: UserRegister, db: AsyncSession = Depends(get_db
     db.add(new_user)
     await db.flush()
 
-    # Create associated starter Wallet with $1000 demo credits
-    new_wallet = Wallet(user_id=new_user.id, available_balance=1000.0, escrow_balance=0.0)
+    # Create associated starter Wallet with 1000 demo INR credits
+    new_wallet = Wallet(user_id=new_user.id, available_balance=1000.0, escrow_balance=0.0, currency="INR")
     db.add(new_wallet)
 
     # Initialize pristine Reliability Score
@@ -110,5 +117,27 @@ async def login_user(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
     }
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    lat = None
+    lng = None
+    if current_user.location is not None:
+        geom_res = await db.execute(
+            select(ST_Y(User.location), ST_X(User.location)).where(User.id == current_user.id)
+        )
+        geom_row = geom_res.first()
+        if geom_row:
+            lat, lng = geom_row
+
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        address_text=current_user.address_text,
+        grid_substation_id=current_user.grid_substation_id,
+        latitude=lat,
+        longitude=lng
+    )

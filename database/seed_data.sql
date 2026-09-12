@@ -1,12 +1,12 @@
--- Seed Demo Users (Password: 'password123' -> bcrypt hash $2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW)
+-- Seed Demo Users (Password: 'password123' -> valid bcrypt hash)
 -- Coherent India-based dataset: Ahmedabad, Gujarat
 INSERT INTO users (id, email, hashed_password, full_name, role, location, address_text, grid_substation_id)
 VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'aarav.prosumer@solar.io', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Aarav Sharma (Solar Prosumer)', 'prosumer', ST_SetSRID(ST_MakePoint(72.5122, 23.0384), 4326), 'Sindhu Bhavan Marg, Bodakdev, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
-    ('22222222-2222-2222-2222-222222222222', 'priya.consumer@eco.io', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Priya Patel (EV Consumer)', 'consumer', ST_SetSRID(ST_MakePoint(72.5611, 23.0365), 4326), 'CG Road, Navrangpura, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
-    ('33333333-3333-3333-3333-333333333333', 'rohan.dual@greenenergy.in', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Rohan Verma (Dual Prosumer)', 'dual', ST_SetSRID(ST_MakePoint(72.5074, 23.0118), 4326), 'Corporate Rd, Prahlad Nagar, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
-    ('44444444-4444-4444-4444-444444444444', 'kavita.solar@cleanpower.org', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Dr. Kavita Rao (Microgrid Host)', 'prosumer', ST_SetSRID(ST_MakePoint(72.5060, 23.0780), 4326), 'Science City Rd, Sola, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_2'),
-    ('55555555-5555-5555-5555-555555555555', 'admin@p2penergy.gov.in', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Torrent Power Smart Grid Admin', 'admin', ST_SetSRID(ST_MakePoint(72.5714, 23.0225), 4326), 'Torrent Power Grid HQ, Ashram Rd, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1')
+    ('11111111-1111-1111-1111-111111111111', 'aarav.prosumer@solar.io', '$2b$12$CFYilce5iMRuoWtOFB5iBOHeFdJ7eH2fO3SfctBliwH1TmpNXObnO', 'Aarav Sharma (Solar Prosumer)', 'prosumer', ST_SetSRID(ST_MakePoint(72.5122, 23.0384), 4326), 'Sindhu Bhavan Marg, Bodakdev, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
+    ('22222222-2222-2222-2222-222222222222', 'priya.consumer@eco.io', '$2b$12$CFYilce5iMRuoWtOFB5iBOHeFdJ7eH2fO3SfctBliwH1TmpNXObnO', 'Priya Patel (EV Consumer)', 'consumer', ST_SetSRID(ST_MakePoint(72.5611, 23.0365), 4326), 'CG Road, Navrangpura, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
+    ('33333333-3333-3333-3333-333333333333', 'rohan.dual@greenenergy.in', '$2b$12$CFYilce5iMRuoWtOFB5iBOHeFdJ7eH2fO3SfctBliwH1TmpNXObnO', 'Rohan Verma (Dual Prosumer)', 'dual', ST_SetSRID(ST_MakePoint(72.5074, 23.0118), 4326), 'Corporate Rd, Prahlad Nagar, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1'),
+    ('44444444-4444-4444-4444-444444444444', 'kavita.solar@cleanpower.org', '$2b$12$CFYilce5iMRuoWtOFB5iBOHeFdJ7eH2fO3SfctBliwH1TmpNXObnO', 'Dr. Kavita Rao (Microgrid Host)', 'prosumer', ST_SetSRID(ST_MakePoint(72.5060, 23.0780), 4326), 'Science City Rd, Sola, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_2'),
+    ('55555555-5555-5555-5555-555555555555', 'admin@p2penergy.gov.in', '$2b$12$CFYilce5iMRuoWtOFB5iBOHeFdJ7eH2fO3SfctBliwH1TmpNXObnO', 'Torrent Power Smart Grid Admin', 'admin', ST_SetSRID(ST_MakePoint(72.5714, 23.0225), 4326), 'Torrent Power Grid HQ, Ashram Rd, Ahmedabad, GJ', 'AHMEDABAD_SUB_ZONE_1')
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Wallets (All in INR)

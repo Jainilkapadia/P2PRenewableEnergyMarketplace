@@ -16,7 +16,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python virtual environments
+/lib/
+!frontend/lib/
 lib64/
 parts/
 sdist/

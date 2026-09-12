@@ -3,22 +3,26 @@
 import React, { useState } from "react";
 import { formatINR } from "@/lib/utils";
 import { usePerspective } from "@/lib/perspective-context";
+import { WalletTransactionItem } from "@/lib/demo-data";
 import {
   Wallet,
-  Lock,
-  Plus,
   ArrowDownLeft,
   ArrowUpRight,
   ShieldCheck,
-  CheckCircle2,
+  Lock,
+  RefreshCw,
+  Plus,
   Clock,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
   Info,
 } from "lucide-react";
 
 export default function WalletPage() {
   const { perspective, activeUser, isConsumer, isProsumer } = usePerspective();
-  const [availableBalance, setAvailableBalance] = useState(activeUser.walletBalance);
-  const [escrowBalance, setEscrowBalance] = useState(activeUser.escrowBalance);
+  const [availableBalance, setAvailableBalance] = useState<number>(activeUser.walletBalance);
+  const [escrowBalance, setEscrowBalance] = useState<number>(activeUser.escrowBalance);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState<number>(2000);
 
@@ -29,7 +33,7 @@ export default function WalletPage() {
   }, [activeUser]);
 
   const handleDeposit = () => {
-    setAvailableBalance((prev) => prev + depositAmount);
+    setAvailableBalance((prev: number) => prev + depositAmount);
     setShowDepositModal(false);
   };
 
@@ -123,7 +127,7 @@ export default function WalletPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-mono text-slate-200">
-              {activeUser.walletTransactions.map((tx) => (
+              {activeUser.walletTransactions.map((tx: WalletTransactionItem) => (
                 <tr key={tx.id} className="hover:bg-slate-800/40">
                   <td className="py-3">
                     <span

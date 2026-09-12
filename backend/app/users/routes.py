@@ -1,14 +1,45 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from typing import List
 from uuid import UUID
+from geoalchemy2.functions import ST_X, ST_Y
 
 from app.core.database import get_db
 from app.auth.routes import get_current_user
 from app.models import User, UserKey
-from app.auth.schemas import KeyRegister
+from app.auth.schemas import KeyRegister, UserResponse
 
 router = APIRouter(prefix="/users", tags=["Users & Crypto Keys"])
+
+@router.get("/", response_model=List[UserResponse])
+async def list_users(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all registered grid nodes and prosumer/consumer identities.
+    """
+    stmt = select(
+        User,
+        ST_Y(User.location).label("lat"),
+        ST_X(User.location).label("lng")
+    ).order_by(User.created_at.asc())
+    res = await db.execute(stmt)
+    users_out = []
+    for row in res.all():
+        u, lat, lng = row
+        users_out.append(UserResponse(
+            id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            role=u.role,
+            address_text=u.address_text,
+            grid_substation_id=u.grid_substation_id,
+            latitude=lat,
+            longitude=lng
+        ))
+    return users_out
 
 @router.post("/keys/register")
 async def register_public_key(

@@ -38,12 +38,18 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Link
-            href="/dashboard"
-            className="text-xs text-slate-300 hover:text-slate-100 font-medium px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+            href="/login"
+            className="text-xs text-slate-300 hover:text-emerald-400 font-medium px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
           >
-            Live Terminal
+            Sign In
+          </Link>
+          <Link
+            href="/register"
+            className="hidden sm:inline-flex text-xs text-slate-300 hover:text-slate-100 font-medium px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors"
+          >
+            Register Node
           </Link>
           <Link
             href="/dashboard"

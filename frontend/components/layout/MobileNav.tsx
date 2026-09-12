@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard,
   Store,
@@ -10,25 +11,59 @@ import {
   Sliders,
   Wallet,
   ArrowLeftRight,
+  Users,
+  ShieldCheck,
+  ListPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const MOBILE_NAV = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Market", href: "/marketplace", icon: Store },
-  { name: "Map", href: "/map", icon: MapPin },
-  { name: "Match", href: "/matching", icon: Sliders },
-  { name: "Trades", href: "/trades", icon: ArrowLeftRight },
-  { name: "Wallet", href: "/wallet", icon: Wallet },
-];
-
 export function MobileNav() {
   const pathname = usePathname();
+  const { role } = useAuth();
+
+  const getMobileNav = () => {
+    if (role === "admin") {
+      return [
+        { name: "Admin", href: "/admin", icon: LayoutDashboard },
+        { name: "Users", href: "/admin/users", icon: Users },
+        { name: "Market", href: "/marketplace", icon: Store },
+        { name: "Trades", href: "/trades", icon: ArrowLeftRight },
+        { name: "Verify", href: "/verification", icon: ShieldCheck },
+      ];
+    }
+    if (role === "prosumer") {
+      return [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Listings", href: "/listings", icon: ListPlus },
+        { name: "Market", href: "/marketplace", icon: Store },
+        { name: "Map", href: "/map", icon: MapPin },
+        { name: "Wallet", href: "/wallet", icon: Wallet },
+      ];
+    }
+    if (role === "dual") {
+      return [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Listings", href: "/listings", icon: ListPlus },
+        { name: "Require", href: "/requirements", icon: Sliders },
+        { name: "Map", href: "/map", icon: MapPin },
+        { name: "Wallet", href: "/wallet", icon: Wallet },
+      ];
+    }
+    return [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Market", href: "/marketplace", icon: Store },
+      { name: "Map", href: "/map", icon: MapPin },
+      { name: "Require", href: "/requirements", icon: Sliders },
+      { name: "Wallet", href: "/wallet", icon: Wallet },
+    ];
+  };
+
+  const navItems = getMobileNav();
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#080d1a]/95 backdrop-blur border-t border-slate-800 z-40 px-2 flex items-center justify-around">
-      {MOBILE_NAV.map((item) => {
-        const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+      {navItems.map((item) => {
+        const isActive = pathname === item.href;
         const Icon = item.icon;
 
         return (
