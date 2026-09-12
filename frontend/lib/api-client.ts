@@ -219,9 +219,37 @@ export const api = {
   getReliability: (userId: string) => fetchFromApi<any>(`/reliability/${userId}`),
 
   // Analytics
-  getMarketOverview: () => fetchFromApi<any>("/analytics/overview"),
-  getSolarForecast: () => fetchFromApi<any[]>("/analytics/forecast/solar"),
+  getMarketOverview: () => fetchFromApi<MarketOverviewStats>("/analytics/overview"),
+  getSolarForecast: (params?: { capacity_kw?: number; system_capacity_kw?: number; tilt_angle_deg?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.capacity_kw !== undefined) query.set("capacity_kw", params.capacity_kw.toString());
+    if (params?.system_capacity_kw !== undefined) query.set("system_capacity_kw", params.system_capacity_kw.toString());
+    if (params?.tilt_angle_deg !== undefined) query.set("tilt_angle_deg", params.tilt_angle_deg.toString());
+    const qs = query.toString();
+    return fetchFromApi<SolarForecastPoint[]>(`/analytics/forecast/solar${qs ? `?${qs}` : ""}`);
+  },
 };
+
+export interface MarketOverviewStats {
+  total_volume_traded_kwh: number;
+  total_value_transacted_inr: number;
+  average_unit_price: number;
+  total_verified_trades: number;
+  co2_offset_kg: number;
+  active_prosumers_count: number;
+  grid_tariff_benchmark: number;
+  total_value_transacted_usd?: number | null;
+}
+
+export interface SolarForecastPoint {
+  hour: number;
+  time_label: string;
+  expected_generation_kwh: number;
+  confidence_interval_low: number;
+  confidence_interval_high: number;
+  optimal_selling_price: number;
+  is_optimal_window: boolean;
+}
 
 export interface BlockchainProofResponse {
   trade_id: string;
