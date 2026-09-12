@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from app.core.database import get_db
-from app.core.crypto import compute_sha256_hash
+from app.core.crypto import compute_sha256_hash, build_canonical_trade_payload
 from app.auth.routes import get_current_user
 from app.models import (
     User, EnergyListing, EnergyRequirement, Trade, TradeVerification,
@@ -25,7 +25,7 @@ async def initiate_trade(
     # 1. Fetch Listing
     listing_res = await db.execute(select(EnergyListing).where(EnergyListing.id == req.listing_id))
     listing = listing_res.scalar_one_or_none()
-    if not listing or listing.status != "active":
+    if not listing or listing.status not in ["active", "partially_filled"]:
         raise HTTPException(status_code=400, detail="Listing is no longer active.")
         
     if float(listing.energy_remaining_kwh) < req.energy_amount_kwh:
@@ -86,17 +86,18 @@ async def initiate_trade(
         listing.status = "partially_filled"
 
     # 6. Initialize Canonical Hash and Trade Verification Record
-    canonical_dict = {
-        "trade_id": str(new_trade.id),
-        "buyer_id": str(new_trade.buyer_id),
-        "seller_id": str(new_trade.seller_id),
-        "listing_id": str(new_trade.listing_id),
-        "energy_amount_kwh": float(new_trade.energy_amount_kwh),
-        "unit_price": float(new_trade.unit_price),
-        "total_amount": float(new_trade.total_amount),
-        "delivery_start": new_trade.delivery_start.isoformat(),
-        "delivery_end": new_trade.delivery_end.isoformat(),
-    }
+    canonical_dict = build_canonical_trade_payload(
+        trade_id=str(new_trade.id),
+        buyer_id=str(new_trade.buyer_id),
+        seller_id=str(new_trade.seller_id),
+        listing_id=str(new_trade.listing_id),
+        energy_kwh=float(new_trade.energy_amount_kwh),
+        unit_price=float(new_trade.unit_price),
+        total_amount=float(new_trade.total_amount),
+        currency="INR",
+        delivery_start=new_trade.delivery_start,
+        delivery_end=new_trade.delivery_end
+    )
     trade_hash = compute_sha256_hash(canonical_dict)
     
     ref_code = f"P2P-VRF-{int(datetime.now(timezone.utc).timestamp())}-{trade_hash[:8].upper()}"
@@ -142,6 +143,11 @@ async def initiate_trade(
         delivery_end=new_trade.delivery_end,
         match_score_snapshot=float(new_trade.match_score_snapshot) if new_trade.match_score_snapshot else None,
         match_explanation=new_trade.match_explanation,
+        is_fully_verified=False,
+        verification_reference=ref_code,
+        buyer_signed=False,
+        seller_signed=False,
+        trade_canonical_hash=trade_hash,
         created_at=new_trade.created_at,
         updated_at=new_trade.updated_at
     )
@@ -151,11 +157,20 @@ async def get_my_trades(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    from sqlalchemy.orm import aliased
+    BuyerUser = aliased(User)
+    SellerUser = aliased(User)
+
     stmt = (
         select(
             Trade,
-            User.full_name.label("other_name")
+            BuyerUser.full_name.label("buyer_full_name"),
+            SellerUser.full_name.label("seller_full_name"),
+            TradeVerification
         )
+        .outerjoin(BuyerUser, Trade.buyer_id == BuyerUser.id)
+        .outerjoin(SellerUser, Trade.seller_id == SellerUser.id)
+        .outerjoin(TradeVerification, Trade.id == TradeVerification.trade_id)
         .where(or_(Trade.buyer_id == current_user.id, Trade.seller_id == current_user.id))
         .order_by(Trade.created_at.desc())
     )
@@ -163,13 +178,13 @@ async def get_my_trades(
     trades_out = []
     
     for row in results.all():
-        trade, other_name = row
+        trade, buyer_full_name, seller_full_name, verif = row
         trades_out.append(TradeResponse(
             id=trade.id,
             buyer_id=trade.buyer_id,
-            buyer_name=current_user.full_name if trade.buyer_id == current_user.id else other_name,
+            buyer_name=buyer_full_name or "Buyer",
             seller_id=trade.seller_id,
-            seller_name=current_user.full_name if trade.seller_id == current_user.id else other_name,
+            seller_name=seller_full_name or "Seller",
             listing_id=trade.listing_id,
             requirement_id=trade.requirement_id,
             energy_amount_kwh=float(trade.energy_amount_kwh),
@@ -180,6 +195,11 @@ async def get_my_trades(
             delivery_end=trade.delivery_end,
             match_score_snapshot=float(trade.match_score_snapshot) if trade.match_score_snapshot else None,
             match_explanation=trade.match_explanation,
+            is_fully_verified=verif.is_fully_verified if verif else False,
+            verification_reference=verif.verification_reference if verif else None,
+            buyer_signed=bool(verif.buyer_signature_hex) if verif else False,
+            seller_signed=bool(verif.seller_signature_hex) if verif else False,
+            trade_canonical_hash=verif.trade_canonical_hash if verif else None,
             created_at=trade.created_at,
             updated_at=trade.updated_at
         ))
@@ -191,11 +211,16 @@ async def get_trade_details(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Trade).where(Trade.id == trade_id)
+    stmt = (
+        select(Trade, TradeVerification)
+        .outerjoin(TradeVerification, Trade.id == TradeVerification.trade_id)
+        .where(Trade.id == trade_id)
+    )
     res = await db.execute(stmt)
-    trade = res.scalar_one_or_none()
-    if not trade:
+    row = res.first()
+    if not row:
         raise HTTPException(status_code=404, detail="Trade not found.")
+    trade, verif = row
         
     buyer_res = await db.execute(select(User).where(User.id == trade.buyer_id))
     seller_res = await db.execute(select(User).where(User.id == trade.seller_id))
@@ -218,6 +243,11 @@ async def get_trade_details(
         delivery_end=trade.delivery_end,
         match_score_snapshot=float(trade.match_score_snapshot) if trade.match_score_snapshot else None,
         match_explanation=trade.match_explanation,
+        is_fully_verified=verif.is_fully_verified if verif else False,
+        verification_reference=verif.verification_reference if verif else None,
+        buyer_signed=bool(verif.buyer_signature_hex) if verif else False,
+        seller_signed=bool(verif.seller_signature_hex) if verif else False,
+        trade_canonical_hash=verif.trade_canonical_hash if verif else None,
         created_at=trade.created_at,
         updated_at=trade.updated_at
     )

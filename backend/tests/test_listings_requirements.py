@@ -13,7 +13,6 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    await engine.dispose()
 
 def get_prosumer_headers():
     token = create_access_token(subject="11111111-1111-1111-1111-111111111111")

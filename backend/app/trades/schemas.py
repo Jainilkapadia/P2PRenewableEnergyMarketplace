@@ -27,6 +27,11 @@ class TradeResponse(BaseModel):
     delivery_end: datetime
     match_score_snapshot: Optional[float] = None
     match_explanation: Optional[Dict[str, Any]] = None
+    is_fully_verified: Optional[bool] = False
+    verification_reference: Optional[str] = None
+    buyer_signed: Optional[bool] = False
+    seller_signed: Optional[bool] = False
+    trade_canonical_hash: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

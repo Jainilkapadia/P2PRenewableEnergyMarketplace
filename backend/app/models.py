@@ -100,6 +100,13 @@ class TradeVerification(Base):
     current_block_hash = Column(String(64), nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Blockchain Anchor Metadata (Milestone 6)
+    blockchain_tx_hash = Column(String(66), nullable=True)
+    blockchain_block_number = Column(Integer, nullable=True)
+    blockchain_contract_address = Column(String(42), nullable=True)
+    blockchain_anchored_at = Column(DateTime(timezone=True), nullable=True)
+    blockchain_status = Column(String(20), nullable=False, default="unanchored")
+
 class ReliabilityScore(Base):
     __tablename__ = "reliability_scores"
 

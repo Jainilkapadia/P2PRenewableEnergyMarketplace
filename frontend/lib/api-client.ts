@@ -19,7 +19,19 @@ export async function fetchFromApi<T>(endpoint: string, options: RequestInit = {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `API error: ${response.statusText} (${response.status})`);
+    let errorMessage = `API error: ${response.statusText} (${response.status})`;
+    if (errorData) {
+      if (typeof errorData.detail === "string") {
+        errorMessage = errorData.detail;
+      } else if (Array.isArray(errorData.detail)) {
+        errorMessage = errorData.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+      } else if (errorData.detail && typeof errorData.detail === "object") {
+        errorMessage = JSON.stringify(errorData.detail);
+      } else if (errorData.message) {
+        errorMessage = typeof errorData.message === "string" ? errorData.message : JSON.stringify(errorData.message);
+      }
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -146,6 +158,52 @@ export const api = {
     method: "POST",
     body: JSON.stringify(payload),
   }),
+  buyerSignTrade: (tradeId: string, payload: { signature?: string; public_key?: string; signature_hex?: string; public_key_hex?: string }) =>
+    fetchFromApi<any>(`/verification/trades/${tradeId}/buyer-sign`, {
+      method: "POST",
+      body: JSON.stringify({
+        signature_hex: payload.signature_hex || payload.signature,
+        public_key_hex: payload.public_key_hex || payload.public_key,
+        signature: payload.signature_hex || payload.signature,
+        public_key: payload.public_key_hex || payload.public_key,
+      }),
+    }),
+  sellerSignTrade: (tradeId: string, payload: { signature?: string; public_key?: string; signature_hex?: string; public_key_hex?: string }) =>
+    fetchFromApi<any>(`/verification/trades/${tradeId}/seller-sign`, {
+      method: "POST",
+      body: JSON.stringify({
+        signature_hex: payload.signature_hex || payload.signature,
+        public_key_hex: payload.public_key_hex || payload.public_key,
+        signature: payload.signature_hex || payload.signature,
+        public_key: payload.public_key_hex || payload.public_key,
+      }),
+    }),
+  getTradeVerification: (tradeId: string) => fetchFromApi<any>(`/verification/trades/${tradeId}`),
+  getVerificationReceipt: (reference: string) => fetchFromApi<any>(`/verification/receipts/${reference}`),
+  verifyTradeIntegrity: (payload: {
+    trade_id: string;
+    tampered_payload?: Record<string, any>;
+    canonical_trade_payload?: Record<string, any>;
+    [key: string]: any;
+  }) =>
+    fetchFromApi<any>("/verification/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        trade_id: payload.trade_id,
+        tampered_payload: payload.tampered_payload || payload.canonical_trade_payload,
+      }),
+    }),
+  registerPublicKey: (payload: { public_key?: string; algorithm?: string; public_key_hex?: string }) =>
+    fetchFromApi<any>("/verification/keys/register", {
+      method: "POST",
+      body: JSON.stringify({
+        public_key_hex: payload.public_key_hex || payload.public_key,
+        public_key: payload.public_key_hex || payload.public_key,
+        algorithm: payload.algorithm || "Ed25519",
+      }),
+    }),
+  getUserPublicKey: (userId: string) =>
+    fetchFromApi<{ user_id: string; public_key_hex: string; algorithm: string }>(`/users/${userId}/public-key`),
   getVerification: (tradeId: string) => fetchFromApi<any>(`/verification/verify/${tradeId}`),
   getAuditChain: () => fetchFromApi<any[]>("/verification/audit-chain"),
   

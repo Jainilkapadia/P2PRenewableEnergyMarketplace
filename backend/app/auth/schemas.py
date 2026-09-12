@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 from typing import Optional
 from uuid import UUID
 
@@ -41,5 +41,14 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 class KeyRegister(BaseModel):
-    public_key_hex: str
+    public_key_hex: Optional[str] = None
+    public_key: Optional[str] = None
     algorithm: Optional[str] = "Ed25519"
+
+    @model_validator(mode="after")
+    def resolve_fields(self):
+        pk = self.public_key_hex or self.public_key
+        if not pk:
+            raise ValueError("public_key_hex or public_key is required")
+        self.public_key_hex = pk
+        return self

@@ -13,11 +13,9 @@ from app.matching.engine import execute_constraint_matching
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
-    """Yield a database session per test and clean up connection."""
+    """Yield a database session per test."""
     async with AsyncSessionLocal() as session:
         yield session
-    # Dispose connection pool to ensure clean event loop boundary
-    await engine.dispose()
 
 async def test_database_connection_and_postgis(db_session):
     """Verify PostgreSQL connectivity and PostGIS extension."""
@@ -120,7 +118,10 @@ async def test_fastapi_endpoints():
         assert "prosumer_name" in first_listing
         assert "seller_reliability_score" in first_listing
         
-        # 4. Matching search endpoint
+        # 4. Matching search endpoint (authenticated)
+        from app.core.security import create_access_token
+        consumer_token = create_access_token(subject="22222222-2222-2222-2222-222222222222")
+        headers = {"Authorization": f"Bearer {consumer_token}"}
         match_payload = {
             "energy_required_kwh": 25.0,
             "max_price_per_kwh": 7.0,
@@ -133,10 +134,8 @@ async def test_fastapi_endpoints():
             "grid_substation_id": "AHMEDABAD_SUB_ZONE_1",
             "preferred_substation_only": False
         }
-        match_resp = await ac.post("/api/v1/matching/find-matches", json=match_payload)
+        match_resp = await ac.post("/api/v1/matching/find-matches", json=match_payload, headers=headers)
         assert match_resp.status_code == 200
         match_data = match_resp.json()
         assert match_data["total_matches_returned"] >= 2
         assert len(match_data["matches"]) >= 2
-
-    await engine.dispose()

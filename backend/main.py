@@ -48,6 +48,11 @@ app.include_router(notifications_router, prefix=api_prefix)
 app.include_router(analytics_router, prefix=api_prefix)
 app.include_router(disputes_router, prefix=api_prefix)
 
+@app.on_event("startup")
+async def on_startup():
+    from app.core.database import ensure_schema_compatibility
+    await ensure_schema_compatibility()
+
 @app.get("/")
 async def root():
     return {
@@ -60,3 +65,4 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+

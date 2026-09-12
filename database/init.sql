@@ -117,7 +117,12 @@ CREATE TABLE trade_verifications (
     verification_reference VARCHAR(100) UNIQUE NOT NULL, -- Format: P2P-VRF-<TIMESTAMP>-<HASH_PREFIX>
     audit_chain_previous_hash VARCHAR(64),
     current_block_hash VARCHAR(64),
-    verified_at TIMESTAMPTZ
+    verified_at TIMESTAMPTZ,
+    blockchain_tx_hash VARCHAR(66),
+    blockchain_block_number BIGINT,
+    blockchain_contract_address VARCHAR(42),
+    blockchain_anchored_at TIMESTAMPTZ,
+    blockchain_status VARCHAR(20) NOT NULL DEFAULT 'unanchored'
 );
 
 CREATE INDEX idx_verifications_trade_id ON trade_verifications (trade_id);
