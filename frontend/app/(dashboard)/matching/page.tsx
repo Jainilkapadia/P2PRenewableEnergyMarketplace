@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePerspective } from "@/lib/perspective-context";
 import { api } from "@/lib/api-client";
@@ -27,7 +27,8 @@ import {
   HelpCircle,
   Sun,
   BatteryCharging,
-  Layers
+  Layers,
+  RefreshCw
 } from "lucide-react";
 
 function MatchingContent() {
@@ -56,6 +57,9 @@ function MatchingContent() {
   const [liveMatches, setLiveMatches] = useState<any[] | null>(null);
   const [matchStatusMessage, setMatchStatusMessage] = useState<string | null>(null);
   const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
+  const [initiatingMatchId, setInitiatingMatchId] = useState<string | null>(null);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const router = useRouter();
 
   // Load existing requirements
   useEffect(() => {
@@ -163,6 +167,96 @@ function MatchingContent() {
     setExpandedExplanation((prev) => (prev === id ? null : id));
   };
 
+  const handleInitiateTrade = async (item: any) => {
+    // Prevent duplicate rapid clicks
+    if (initiatingMatchId) return;
+
+    const listingId = item.listing_id || item.listingId;
+    if (!listingId) {
+      setTradeError("Listing ID is missing from selected match.");
+      return;
+    }
+
+    setTradeError(null);
+    setInitiatingMatchId(listingId);
+
+    try {
+      const availKwh = Number(item.energy_available_kwh ?? item.listing?.energyAvailableKwh ?? 0);
+      const reqKwh = Number(energyRequired) || 10.0;
+      const energyAmount = availKwh > 0 ? Math.min(reqKwh, availKwh) : reqKwh;
+      const unitPrice = Number(item.price_per_kwh ?? item.listing?.pricePerKwh ?? maxPrice ?? 5.8);
+      const matchScore = Number(item.composite_match_score ?? item.compositeMatchScore ?? 95.0);
+
+      const explanationObj = item.explanation || {
+        summary: item.summary || "Smart match engine selected counterpart",
+        factors: item.factors || [],
+        trade_off_insight: item.trade_off_insight || item.tradeOffInsight || null,
+      };
+
+      const payload = {
+        listing_id: listingId,
+        requirement_id: selectedRequirementId || undefined,
+        energy_amount_kwh: energyAmount,
+        unit_price: unitPrice,
+        match_score: matchScore,
+        match_explanation: explanationObj,
+      };
+
+      const newTrade = await api.initiateTrade(payload);
+
+      if (newTrade && newTrade.id) {
+        // Successful initiation: navigate directly to trades with deep-link parameter
+        router.push(`/trades?trade_id=${newTrade.id}`);
+      } else {
+        throw new Error("Trade initiation succeeded but no trade ID was returned.");
+      }
+    } catch (err: any) {
+      console.error("Trade initiation failed:", err);
+      const message = err?.message || "Failed to initiate trade. Please check your wallet balance and try again.";
+      setTradeError(message);
+      setInitiatingMatchId(null);
+    }
+  };
+
+  const handleAcceptDemandOffer = async (item: any) => {
+    if (initiatingMatchId) return;
+    const reqId = item.requirementId || "demand-offer";
+    setInitiatingMatchId(reqId);
+    setTradeError(null);
+
+    try {
+      const myListings = await api.getMyListings();
+      const activeListing = myListings && myListings.length > 0 ? myListings.find((l: any) => l.status === "active") || myListings[0] : null;
+
+      if (!activeListing) {
+        throw new Error("No active listing found on your account to fulfill this demand. Please create an energy listing first.");
+      }
+
+      const payload = {
+        listing_id: activeListing.id,
+        requirement_id: item.requirementId,
+        energy_amount_kwh: Number(item.consumer?.energyRequiredKwh) || 15.0,
+        unit_price: Number(item.consumer?.maxPricePerKwh) || Number(activeListing.price_per_kwh) || 5.8,
+        match_score: Number(item.compositeMatchScore) || 94.2,
+        match_explanation: {
+          summary: item.summary || "Prosumer accepted incoming consumer demand",
+          factors: item.factors || [],
+        },
+      };
+
+      const newTrade = await api.initiateTrade(payload);
+      if (newTrade && newTrade.id) {
+        router.push(`/trades?trade_id=${newTrade.id}`);
+      } else {
+        throw new Error("Trade initiation succeeded but no trade ID was returned.");
+      }
+    } catch (err: any) {
+      console.error("Trade offer initiation failed:", err);
+      setTradeError(err?.message || "Failed to issue trade offer. Please check your active listings.");
+      setInitiatingMatchId(null);
+    }
+  };
+
   const activeConsumerMatches = liveMatches || CONSUMER_RANKED_MATCHES;
 
   return (
@@ -193,6 +287,21 @@ function MatchingContent() {
         <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{matchStatusMessage}</span>
+        </div>
+      )}
+
+      {tradeError && (
+        <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{tradeError}</span>
+          </div>
+          <button
+            onClick={() => setTradeError(null)}
+            className="text-rose-400 hover:text-rose-300 text-xs underline shrink-0 font-medium"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -534,13 +643,23 @@ function MatchingContent() {
                           {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
 
-                        <Link
-                          href={`/trades`}
-                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors"
+                        <button
+                          onClick={() => handleInitiateTrade(item)}
+                          disabled={initiatingMatchId === listingId}
+                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-bold text-xs transition-colors"
                         >
-                          <span>Select & Lock Trade</span>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
+                          {initiatingMatchId === listingId ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>Locking Escrow...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Select & Lock Trade</span>
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
 
@@ -692,13 +811,23 @@ function MatchingContent() {
                           {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
 
-                        <Link
-                          href={`/trades`}
-                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-colors"
+                        <button
+                          onClick={() => handleAcceptDemandOffer(item)}
+                          disabled={initiatingMatchId === item.requirementId}
+                          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-bold text-xs transition-colors"
                         >
-                          <span>Accept & Issue Trade Offer</span>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
+                          {initiatingMatchId === item.requirementId ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>Issuing Offer...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Accept & Issue Trade Offer</span>
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
 
