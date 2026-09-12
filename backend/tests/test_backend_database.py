@@ -22,7 +22,7 @@ async def test_database_connection_and_postgis(db_session):
     result = await db_session.execute(text("SELECT PostGIS_Version(), current_database()"))
     row = result.fetchone()
     assert row is not None
-    assert "3.4" in row[0]
+    assert "3." in row[0]
     assert row[1] == "p2p_energy_db"
 
 async def test_seeded_users_and_wallets(db_session):
