@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePerspective } from "@/lib/perspective-context";
+import { api } from "@/lib/api-client";
 import {
-  AHMEDABAD_CONSUMER_REQUIREMENT,
   CONSUMER_RANKED_MATCHES,
   PROSUMER_RANKED_DEMANDS,
-  RankedMatch,
 } from "@/lib/demo-data";
 import { formatINR, formatKWh, formatDistance } from "@/lib/utils";
 import {
@@ -27,16 +27,25 @@ import {
   HelpCircle,
   Sun,
   BatteryCharging,
+  Layers
 } from "lucide-react";
 
-export default function MatchingPage() {
+function MatchingContent() {
   const { perspective, activeUser, isConsumer, isProsumer } = usePerspective();
+  const searchParams = useSearchParams();
+  const initialRequirementId = searchParams.get("requirementId");
+
+  // User's requirements list
+  const [myRequirements, setMyRequirements] = useState<any[]>([]);
+  const [selectedRequirementId, setSelectedRequirementId] = useState<string>(initialRequirementId || "");
 
   // Consumer Form State
   const [energyRequired, setEnergyRequired] = useState(25.0);
   const [maxPrice, setMaxPrice] = useState(7.0);
   const [maxRadius, setMaxRadius] = useState(15.0);
   const [minReliability, setMinReliability] = useState(85.0);
+  const [substationId, setSubstationId] = useState("AHMEDABAD_SUB_ZONE_1");
+  const [preferredSubOnly, setPreferredSubOnly] = useState(false);
 
   // Prosumer Form State (surplus broadcast parameters)
   const [surplusAvailable, setSurplusAvailable] = useState(35.0);
@@ -44,26 +53,117 @@ export default function MatchingPage() {
 
   // Matching Engine State
   const [isMatching, setIsMatching] = useState(false);
-  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(
-    isConsumer ? CONSUMER_RANKED_MATCHES[0]?.listingId : PROSUMER_RANKED_DEMANDS[0]?.requirementId
-  );
+  const [liveMatches, setLiveMatches] = useState<any[] | null>(null);
+  const [matchStatusMessage, setMatchStatusMessage] = useState<string | null>(null);
+  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
 
+  // Load existing requirements
   useEffect(() => {
-    setExpandedExplanation(
-      isConsumer ? CONSUMER_RANKED_MATCHES[0]?.listingId : PROSUMER_RANKED_DEMANDS[0]?.requirementId
-    );
-  }, [perspective, isConsumer]);
+    async function loadRequirements() {
+      try {
+        const reqs = await api.getMyRequirements();
+        setMyRequirements(reqs);
+        if (!selectedRequirementId && reqs.length > 0) {
+          const first = reqs[0];
+          setSelectedRequirementId(first.id);
+          setEnergyRequired(first.energy_required_kwh);
+          setMaxPrice(first.max_price_per_kwh);
+          setMaxRadius(first.max_radius_km);
+          setMinReliability(first.min_seller_reliability);
+          setSubstationId(first.grid_substation_id);
+          setPreferredSubOnly(first.preferred_substation_only);
+        }
+      } catch {
+        // Silently fallback if offline
+      }
+    }
+    loadRequirements();
+  }, []);
 
-  const handleRunMatcher = () => {
-    setIsMatching(true);
-    setTimeout(() => {
-      setIsMatching(false);
-    }, 1000);
+  // When a requirement is selected from dropdown
+  const handleSelectRequirement = (reqId: string) => {
+    setSelectedRequirementId(reqId);
+    const found = myRequirements.find((r) => r.id === reqId);
+    if (found) {
+      setEnergyRequired(found.energy_required_kwh);
+      setMaxPrice(found.max_price_per_kwh);
+      setMaxRadius(found.max_radius_km);
+      setMinReliability(found.min_seller_reliability);
+      setSubstationId(found.grid_substation_id);
+      setPreferredSubOnly(found.preferred_substation_only);
+    }
   };
+
+  const handleRunMatcher = async () => {
+    setIsMatching(true);
+    setMatchStatusMessage(null);
+
+    try {
+      if (selectedRequirementId) {
+        // Try calling real backend for this requirement
+        const response = await api.getMatchesForRequirement(selectedRequirementId);
+        if (response && response.matches) {
+          setLiveMatches(response.matches);
+          setMatchStatusMessage(`Found ${response.total_matches_returned} eligible prosumer matches via PostGIS solver.`);
+          if (response.matches.length > 0) {
+            setExpandedExplanation(response.matches[0].listing_id);
+          }
+          setIsMatching(false);
+          return;
+        }
+      } else {
+        // Ad-hoc query
+        const now = new Date();
+        const from = new Date(now.getTime() + 60 * 60 * 1000);
+        const to = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+
+        const response = await api.findMatches({
+          energy_required_kwh: energyRequired,
+          max_price_per_kwh: maxPrice,
+          required_from: from.toISOString(),
+          required_to: to.toISOString(),
+          latitude: activeUser.location.lat,
+          longitude: activeUser.location.lng,
+          max_radius_km: maxRadius,
+          min_seller_reliability: minReliability,
+          grid_substation_id: substationId,
+          preferred_substation_only: preferredSubOnly
+        });
+        if (response && response.matches) {
+          setLiveMatches(response.matches);
+          setMatchStatusMessage(`Found ${response.total_matches_returned} eligible prosumer matches.`);
+          if (response.matches.length > 0) {
+            setExpandedExplanation(response.matches[0].listing_id);
+          }
+          setIsMatching(false);
+          return;
+        }
+      }
+    } catch {
+      // Fallback gracefully to demo ranked matches
+    }
+
+    setTimeout(() => {
+      setLiveMatches(null);
+      setExpandedExplanation(
+        isConsumer ? CONSUMER_RANKED_MATCHES[0]?.listingId : PROSUMER_RANKED_DEMANDS[0]?.requirementId
+      );
+      setIsMatching(false);
+    }, 600);
+  };
+
+  // Trigger matching on mount if requirementId was passed in URL
+  useEffect(() => {
+    if (initialRequirementId) {
+      handleRunMatcher();
+    }
+  }, [initialRequirementId]);
 
   const toggleExplanation = (id: string) => {
     setExpandedExplanation((prev) => (prev === id ? null : id));
   };
+
+  const activeConsumerMatches = liveMatches || CONSUMER_RANKED_MATCHES;
 
   return (
     <div className="space-y-6">
@@ -73,21 +173,28 @@ export default function MatchingPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
             Smart Constraint Matching Engine
             <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              5-Factor Ahmedabad Grid Optimization
+              5-Factor Multi-Objective Scorer
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
             {isConsumer
-              ? "Autonomous constraint solver pairing your EV requirement with optimal verified Ahmedabad solar prosumers."
+              ? "Deterministic constraint solver ranking active solar prosumers with mathematical match explanations."
               : "Inbound demand matching engine scoring consumer bids against your Bodakdev rooftop solar surplus profile."}
           </p>
         </div>
 
         <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          Engine Core: PostGIS + Ahmedabad Rule Scorer
+          Engine: PostGIS + Exact 35/20/25/10/10 Weights
         </div>
       </div>
+
+      {matchStatusMessage && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span>{matchStatusMessage}</span>
+        </div>
+      )}
 
       {/* Main Grid: Left Requirement / Supply Form (1/3), Right Ranked Matches (2/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -96,7 +203,7 @@ export default function MatchingPage() {
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
               <Sliders className="h-4 w-4 text-emerald-400" />
-              {isConsumer ? "Energy Requirement Constraints" : "Prosumer Supply Parameters"}
+              {isConsumer ? "Requirement Constraints" : "Prosumer Supply Parameters"}
             </h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
               {activeUser.name} ({activeUser.roleLabel})
@@ -106,6 +213,24 @@ export default function MatchingPage() {
           {isConsumer ? (
             /* Consumer Form */
             <div className="space-y-4 text-xs">
+              {myRequirements.length > 0 && (
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Select Registered Requirement</label>
+                  <select
+                    value={selectedRequirementId}
+                    onChange={(e) => handleSelectRequirement(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Custom Parameters (Ad-Hoc)</option>
+                    {myRequirements.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title} ({r.energy_required_kwh} kWh @ ₹{r.max_price_per_kwh}/kWh)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-slate-400 mb-1 font-medium">Energy Required (kWh)</label>
                 <div className="relative">
@@ -175,7 +300,7 @@ export default function MatchingPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Feeder Substation:</span>
-                  <span className="text-indigo-400 font-mono">{activeUser.substation}</span>
+                  <span className="text-indigo-400 font-mono">{substationId}</span>
                 </div>
               </div>
             </div>
@@ -258,7 +383,7 @@ export default function MatchingPage() {
             ) : (
               <>
                 <Sparkles className="h-4 w-4" />
-                <span>{isConsumer ? "Re-Execute Matching Engine" : "Scan Demand Orderbook"}</span>
+                <span>{isConsumer ? "Execute Smart Matching" : "Scan Demand Orderbook"}</span>
               </>
             )}
           </button>
@@ -270,11 +395,11 @@ export default function MatchingPage() {
             <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
               {isConsumer ? "Ranked Compatibility Matches" : "Ranked Incoming Consumer Demands"}
               <span className="text-xs font-mono font-normal text-slate-400">
-                ({isConsumer ? CONSUMER_RANKED_MATCHES.length : PROSUMER_RANKED_DEMANDS.length} verified counterparts)
+                ({isConsumer ? activeConsumerMatches.length : PROSUMER_RANKED_DEMANDS.length} verified counterparts)
               </span>
             </h2>
             <span className="text-[11px] text-slate-400">
-              Sorted by Multi-Factor Score
+              Sorted by Multi-Factor Composite Score
             </span>
           </div>
 
@@ -286,26 +411,41 @@ export default function MatchingPage() {
                 <Zap className="h-6 w-6 text-emerald-400 animate-pulse" />
               </div>
               <h3 className="text-sm font-bold text-slate-200">
-                Evaluating Ahmedabad Microgrid Constraints...
+                Evaluating PostGIS & Feeder Constraints...
               </h3>
               <p className="text-xs text-slate-400 max-w-sm">
-                Calculating line loss distance across SG Highway and CG Road feeders, verifiable reputation scores, and time overlap.
+                Calculating line loss distance across Bodakdev and Navrangpura feeders, verifiable reputation scores, and time overlap.
               </p>
             </div>
           ) : isConsumer ? (
             /* Consumer View: Prosumer Matches */
             <div className="space-y-4">
-              {CONSUMER_RANKED_MATCHES.map((item) => {
-                const isExpanded = expandedExplanation === item.listingId;
+              {activeConsumerMatches.map((item: any) => {
+                const listingId = item.listing_id || item.listingId;
+                const title = item.listing_title || item.listing?.title;
+                const prosumerName = item.prosumer_name || item.listing?.prosumerName;
+                const price = item.price_per_kwh || item.listing?.pricePerKwh;
+                const distanceKm = item.distance_km ?? item.listing?.distanceKm ?? 0;
+                const reliability = item.seller_reliability_score ?? item.listing?.sellerReliabilityScore ?? 100;
+                const gridSub = item.grid_substation_id || item.listing?.gridSubstationId;
+                const matchScore = item.composite_match_score ?? item.compositeMatchScore;
+                const rank = item.rank;
+                const explanation = item.explanation || {
+                  summary: item.summary,
+                  factors: item.factors,
+                  trade_off_insight: item.tradeOffInsight
+                };
+
+                const isExpanded = expandedExplanation === listingId;
 
                 return (
                   <motion.div
-                    key={item.listingId}
+                    key={listingId}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2 }}
                     className={`rounded-2xl border transition-all overflow-hidden ${
-                      item.rank === 1
+                      rank === 1
                         ? "bg-slate-900/95 border-emerald-500/40 shadow-lg shadow-emerald-500/10"
                         : "bg-slate-900 border-slate-800 hover:border-slate-700"
                     }`}
@@ -316,27 +456,27 @@ export default function MatchingPage() {
                         <div className="flex items-center gap-3">
                           <div
                             className={`h-10 w-10 rounded-xl flex items-center justify-center font-mono font-black text-sm shrink-0 ${
-                              item.rank === 1
+                              rank === 1
                                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 glow-emerald"
                                 : "bg-slate-800 text-slate-300 border border-slate-700"
                             }`}
                           >
-                            #{item.rank}
+                            #{rank}
                           </div>
 
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="text-base font-bold text-slate-100">{item.listing.title}</h3>
-                              {item.rank === 1 && (
+                              <h3 className="text-base font-bold text-slate-100">{title}</h3>
+                              {rank === 1 && (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                                   Top Pick
                                 </span>
                               )}
                             </div>
                             <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                              <span>Seller: <strong className="text-slate-200">{item.listing.prosumerName}</strong></span>
+                              <span>Seller: <strong className="text-slate-200">{prosumerName}</strong></span>
                               <span>•</span>
-                              <span>{item.listing.location.address}</span>
+                              <span>Ahmedabad Microgrid Node</span>
                             </p>
                           </div>
                         </div>
@@ -344,10 +484,10 @@ export default function MatchingPage() {
                         {/* Match Score Gauge */}
                         <div className="text-right shrink-0">
                           <div className="text-2xl font-black font-mono text-emerald-400">
-                            {item.compositeMatchScore}%
+                            {matchScore}%
                           </div>
                           <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                            Match Score
+                            Composite Match Score
                           </span>
                         </div>
                       </div>
@@ -357,28 +497,28 @@ export default function MatchingPage() {
                         <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
                           <span className="text-[10px] text-slate-400 block">Unit Tariff</span>
                           <span className="text-sm font-mono font-bold text-emerald-400">
-                            {formatINR(item.listing.pricePerKwh)}/kWh
+                            {formatINR(price)}/kWh
                           </span>
                         </div>
 
                         <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
                           <span className="text-[10px] text-slate-400 block">Distance</span>
                           <span className="text-sm font-mono font-bold text-slate-200">
-                            {formatDistance(item.listing.distanceKm)}
+                            {formatDistance(distanceKm)}
                           </span>
                         </div>
 
                         <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
                           <span className="text-[10px] text-slate-400 block">Reliability</span>
                           <span className="text-sm font-mono font-bold text-slate-200">
-                            {item.listing.sellerReliabilityScore}% Trust
+                            {reliability}% Trust
                           </span>
                         </div>
 
                         <div className="p-2 rounded-lg bg-slate-950 border border-slate-800/80">
                           <span className="text-[10px] text-slate-400 block">Grid Feeder</span>
                           <span className="text-xs font-mono font-bold text-indigo-400 truncate block">
-                            {item.listing.gridSubstationId}
+                            {gridSub}
                           </span>
                         </div>
                       </div>
@@ -386,7 +526,7 @@ export default function MatchingPage() {
                       {/* Expandable Explanation Button */}
                       <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-800">
                         <button
-                          onClick={() => toggleExplanation(item.listingId)}
+                          onClick={() => toggleExplanation(listingId)}
                           className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-medium transition-colors"
                         >
                           <HelpCircle className="h-3.5 w-3.5" />
@@ -404,9 +544,9 @@ export default function MatchingPage() {
                       </div>
                     </div>
 
-                    {/* Expandable Transparent Factor Explanation Panel */}
+                    {/* Expandable Factor Explanation Panel */}
                     <AnimatePresence>
-                      {isExpanded && (
+                      {isExpanded && explanation && (
                         <motion.div
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: "auto", opacity: 1 }}
@@ -415,30 +555,48 @@ export default function MatchingPage() {
                           className="bg-slate-950/80 border-t border-slate-800 px-5 py-4 space-y-3"
                         >
                           <div className="text-xs text-slate-300 font-medium">
-                            {item.summary}
+                            {explanation.summary}
                           </div>
 
                           <div className="space-y-2 pt-2">
-                            {item.factors.map((factor, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-900 border border-slate-800/60 text-xs"
-                              >
-                                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-semibold text-slate-200">{factor.factor}</span>
-                                    <span className="text-[10px] font-mono text-slate-400">Weight: {factor.weight}</span>
+                            {explanation.factors?.map((factor: any, idx: number) => {
+                              const impactColor =
+                                factor.impact === "POSITIVE"
+                                  ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                                  : factor.impact === "BONUS"
+                                  ? "text-indigo-400 border-indigo-500/30 bg-indigo-500/10"
+                                  : factor.impact === "WARNING"
+                                  ? "text-amber-400 border-amber-500/30 bg-amber-500/10"
+                                  : "text-slate-400 border-slate-700 bg-slate-800/40";
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-900 border border-slate-800/60 text-xs"
+                                >
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-slate-200">{factor.factor}</span>
+                                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${impactColor}`}>
+                                          {factor.impact}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] font-mono text-slate-400">Weight: {factor.weight}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-0.5">{factor.detail}</p>
                                   </div>
-                                  <p className="text-[11px] text-slate-400 mt-0.5">{factor.detail}</p>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
 
-                          <div className="p-2.5 rounded-lg bg-indigo-950/20 border border-indigo-500/20 text-xs text-indigo-300 mt-2">
-                            <strong>Trade-off Insight:</strong> {item.tradeOffInsight}
-                          </div>
+                          {explanation.trade_off_insight && (
+                            <div className="p-2.5 rounded-lg bg-indigo-950/20 border border-indigo-500/20 text-xs text-indigo-300 mt-2">
+                              <strong>Trade-off Insight:</strong> {explanation.trade_off_insight}
+                            </div>
+                          )}
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -591,3 +749,12 @@ export default function MatchingPage() {
     </div>
   );
 }
+
+export default function MatchingPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-slate-400 text-xs">Loading Matching Engine...</div>}>
+      <MatchingContent />
+    </Suspense>
+  );
+}
+

@@ -294,7 +294,7 @@ export default function RequirementsPage() {
 
                 <div className="pt-2 border-t border-slate-800 flex justify-end">
                   <Link
-                    href="/matching"
+                    href={`/matching?requirementId=${req.id}`}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all"
                   >
                     <span>Match with Solar Prosumers</span>

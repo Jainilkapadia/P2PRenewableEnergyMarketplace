@@ -120,6 +120,8 @@ export const api = {
 
   
   // Matching Engine
+  getMatchesForRequirement: (requirementId: string) =>
+    fetchFromApi<any>(`/matching/${requirementId}`),
   findMatches: (payload: any) => fetchFromApi<any>("/matching/find-matches", {
     method: "POST",
     body: JSON.stringify(payload),
