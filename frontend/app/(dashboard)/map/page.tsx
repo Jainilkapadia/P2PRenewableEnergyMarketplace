@@ -37,6 +37,8 @@ const MapLibreMap = dynamic(() => import("@/components/map/MapLibreMap"), {
   ),
 });
 
+import { ActiveTradeFlow } from "@/components/map/MapLibreMap";
+
 function deriveNeighborhoodAndAddress(lat: number, lng: number): { neighborhood: string; address: string } {
   // Bodakdev approx (23.0384, 72.5122)
   if (Math.abs(lat - 23.0384) < 0.02 && Math.abs(lng - 72.5122) < 0.02) {
@@ -76,9 +78,11 @@ function MapContent() {
   const { perspective, activeUser } = usePerspective();
   const searchParams = useSearchParams();
   const prosumerQueryId = searchParams.get("prosumer");
+  const tradeQueryId = searchParams.get("trade_id") || searchParams.get("trade");
 
   const [rawListings, setRawListings] = useState<ProsumerListing[]>(AHMEDABAD_LISTINGS);
   const [selectedProsumer, setSelectedProsumer] = useState<ProsumerListing | null>(null);
+  const [activeTradeFlow, setActiveTradeFlow] = useState<ActiveTradeFlow | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLiveApi, setIsLiveApi] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>("");
@@ -158,6 +162,80 @@ function MapContent() {
     fetchListings();
   }, [prosumerQueryId]);
 
+  // Load trade coordinates and details when tradeQueryId is present
+  useEffect(() => {
+    if (!tradeQueryId) {
+      setActiveTradeFlow(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadTradeFlow() {
+      try {
+        // 1. Fetch authorized trades for current user
+        const myTrades = await api.getMyTrades();
+        if (!isMounted || !Array.isArray(myTrades)) return;
+
+        const trade = myTrades.find((t: any) => t.id === tradeQueryId);
+        if (!trade || !isMounted) return;
+
+        // 2. Fetch users to resolve geographic endpoints
+        const users = await api.getUsers();
+        if (!isMounted) return;
+
+        const seller = users.find((u: any) => u.id === trade.seller_id);
+        const buyer = users.find((u: any) => u.id === trade.buyer_id);
+
+        if (
+          seller &&
+          buyer &&
+          typeof seller.latitude === "number" &&
+          typeof seller.longitude === "number" &&
+          typeof buyer.latitude === "number" &&
+          typeof buyer.longitude === "number"
+        ) {
+          const flow: ActiveTradeFlow = {
+            tradeId: trade.id,
+            sellerId: trade.seller_id,
+            sellerName: trade.seller_name || seller.full_name || "Seller Node",
+            sellerCoords: [seller.longitude, seller.latitude],
+            buyerId: trade.buyer_id,
+            buyerName: trade.buyer_name || buyer.full_name || "Buyer Node",
+            buyerCoords: [buyer.longitude, buyer.latitude],
+            energyKwh: trade.energy_amount_kwh,
+            unitPrice: trade.unit_price,
+            totalAmount: trade.total_amount,
+            status: trade.status,
+            verificationReference: trade.verification_reference,
+            isFullyVerified: trade.is_fully_verified,
+            isAnchored: trade.status === "fully_verified" && Boolean(trade.blockchain_tx_hash),
+          };
+
+          if (isMounted) {
+            setActiveTradeFlow(flow);
+          }
+        } else {
+          // If coordinates are unavailable, do not invent or draw false coordinates
+          if (isMounted) {
+            setActiveTradeFlow(null);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load trade flow for map:", err);
+        if (isMounted) {
+          setActiveTradeFlow(null);
+        }
+      }
+    }
+
+    loadTradeFlow();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tradeQueryId]);
+
   // Recalculate dynamic distance from active user anchor
   const listings = useMemo(() => {
     return rawListings.map((item) => {
@@ -231,6 +309,7 @@ function MapContent() {
           selectedProsumer={selectedProsumer}
           onSelectProsumer={(p) => setSelectedProsumer(p)}
           isLoading={isLoading}
+          activeTradeFlow={activeTradeFlow}
         />
 
         {/* Floating Quick Prosumer Selector Tabs (Top-Left overlay) */}

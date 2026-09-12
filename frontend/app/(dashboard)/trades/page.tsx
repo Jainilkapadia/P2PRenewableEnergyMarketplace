@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { formatINR, formatKWh, shortenHash } from "@/lib/utils";
 import { usePerspective } from "@/lib/perspective-context";
 import { useAuth } from "@/lib/auth-context";
@@ -17,11 +18,16 @@ import {
   ArrowRight,
   PenTool,
   RefreshCw,
+  Blocks,
+  MapPin,
 } from "lucide-react";
 
-export default function TradesPage() {
+function TradesPageContent() {
   const { perspective, activeUser, isConsumer, isProsumer } = usePerspective();
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const queryTradeId = searchParams.get("trade_id") || searchParams.get("id");
+
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedTradeId, setSelectedTradeId] = useState<string>("");
@@ -37,22 +43,47 @@ export default function TradesPage() {
             (t: any, index: number, self: any[]) => index === self.findIndex((x) => x.id === t.id)
           );
           setTrades(unique);
-          if (!selectedTradeId || !unique.some((t: any) => t.id === selectedTradeId)) {
+
+          // Deep-linking selection logic:
+          // 1. If queryTradeId exists AND matches an authorized trade returned for this user, select it.
+          // 2. Otherwise, if current selectedTradeId exists in unique, keep it.
+          // 3. Otherwise fall back to the first authorized trade.
+          const matchedByQuery = queryTradeId ? unique.find((t: any) => t.id === queryTradeId) : null;
+          if (matchedByQuery) {
+            setSelectedTradeId(matchedByQuery.id);
+          } else if (selectedTradeId && unique.some((t: any) => t.id === selectedTradeId)) {
+            // Keep current valid selection
+          } else {
             setSelectedTradeId(unique[0].id);
           }
         } else {
           setTrades([]);
+          setSelectedTradeId("");
         }
       } catch (err) {
         console.warn("Could not load backend trades:", err);
+        setTrades([]);
+        setSelectedTradeId("");
       } finally {
         setLoading(false);
       }
     }
     loadTrades();
-  }, [perspective, user]);
+  }, [perspective, user, queryTradeId]);
 
-  const selectedTrade = trades.find((t) => t.id === selectedTradeId) || trades[0];
+  // If queryTradeId changes while trades are already loaded in state, update selection reactively
+  useEffect(() => {
+    if (queryTradeId && trades.length > 0) {
+      const match = trades.find((t: any) => t.id === queryTradeId);
+      if (match) {
+        setSelectedTradeId(match.id);
+      }
+    }
+  }, [queryTradeId, trades]);
+
+  // Derive selectedTrade strictly from the authorized trades list matching selectedTradeId.
+  // Never fallback to trades[0] if selectedTradeId is set to an unauthorized/mismatched id.
+  const selectedTrade = trades.find((t) => t.id === selectedTradeId) || null;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -85,6 +116,31 @@ export default function TradesPage() {
     }
   };
 
+  const getBlockchainBadge = (trade: any) => {
+    if (trade?.blockchain_status === "anchored" || trade?.blockchain_tx_hash) {
+      return {
+        label: "ANCHORED",
+        classes: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+      };
+    }
+    if (trade?.blockchain_status === "failed") {
+      return {
+        label: "FAILED",
+        classes: "bg-red-500/15 text-red-400 border-red-500/30",
+      };
+    }
+    if (trade?.status === "fully_verified" || trade?.is_fully_verified) {
+      return {
+        label: "UNANCHORED",
+        classes: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+      };
+    }
+    return {
+      label: "OFF-CHAIN",
+      classes: "bg-slate-800/80 text-slate-500 border-slate-700/50",
+    };
+  };
+
   const isSelectedBuyerSigned =
     selectedTrade?.status === "buyer_signed" ||
     selectedTrade?.status === "fully_verified" ||
@@ -96,6 +152,7 @@ export default function TradesPage() {
     selectedTrade?.seller_signed;
 
   const isSelectedFullyVerified = selectedTrade?.status === "fully_verified" || selectedTrade?.is_fully_verified;
+  const isSelectedAnchored = selectedTrade?.blockchain_status === "anchored" || Boolean(selectedTrade?.blockchain_tx_hash);
 
   return (
     <div className="space-y-6">
@@ -104,12 +161,12 @@ export default function TradesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
             Active P2P Trades
-            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-              Dual-Signature Ledger
+            <span className="text-xs font-mono font-medium px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              Dual-Signature & Smart Contract Anchor
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Cryptographically committed energy delivery contracts on Ahmedabad Substation
+            Cryptographically committed and blockchain-anchored energy delivery contracts on Ahmedabad Substation
           </p>
         </div>
 
@@ -138,24 +195,33 @@ export default function TradesPage() {
               </h2>
             </div>
 
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-mono font-bold border self-start sm:self-auto ${
-                getStatusBadge(selectedTrade.status).classes
-              }`}
-            >
-              STATUS: {getStatusBadge(selectedTrade.status).label}
-            </span>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${
+                  getStatusBadge(selectedTrade.status).classes
+                }`}
+              >
+                STATUS: {getStatusBadge(selectedTrade.status).label}
+              </span>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${
+                  getBlockchainBadge(selectedTrade).classes
+                }`}
+              >
+                ON-CHAIN: {getBlockchainBadge(selectedTrade).label}
+              </span>
+            </div>
           </div>
 
-          {/* 5-Step Visual Timeline */}
+          {/* 6-Step Visual Timeline */}
           <div className="py-2">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
                 <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
                   <CheckCircle2 className="h-4 w-4" />
                   <span>1. Matched</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">Constraint matched on Ahmedabad Grid</p>
+                <p className="text-[11px] text-slate-400 mt-1">Constraint matched</p>
               </div>
 
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
@@ -164,7 +230,7 @@ export default function TradesPage() {
                   <span>2. Escrow Held</span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  {formatINR(selectedTrade.total_amount ?? selectedTrade.totalAmount ?? 0)} held in escrow
+                  {formatINR(selectedTrade.total_amount ?? selectedTrade.totalAmount ?? 0)} in escrow
                 </p>
               </div>
 
@@ -180,7 +246,7 @@ export default function TradesPage() {
                   <span>3. Buyer Signed</span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  {isSelectedBuyerSigned ? "Buyer Ed25519 signature verified" : "Awaiting Buyer digital signature"}
+                  {isSelectedBuyerSigned ? "Buyer Ed25519 verified" : "Awaiting Buyer signature"}
                 </p>
               </div>
 
@@ -198,7 +264,7 @@ export default function TradesPage() {
                   <span>4. Seller Signed</span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  {isSelectedSellerSigned ? "Seller Ed25519 signature verified" : "Awaiting Seller digital signature"}
+                  {isSelectedSellerSigned ? "Seller Ed25519 verified" : "Awaiting Seller signature"}
                 </p>
               </div>
 
@@ -211,10 +277,28 @@ export default function TradesPage() {
               >
                 <div className="flex items-center gap-1.5 font-bold">
                   <ShieldCheck className="h-4 w-4" />
-                  <span>5. Settled & Verified</span>
+                  <span>5. Verified</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  {isSelectedFullyVerified ? "Cryptographic proof anchored" : "Pending dual signatures"}
+                  {isSelectedFullyVerified ? "Dual-signed off-chain" : "Pending signatures"}
+                </p>
+              </div>
+
+              <div
+                className={`p-3 rounded-xl border text-xs ${
+                  isSelectedAnchored
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold"
+                    : isSelectedFullyVerified
+                    ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300"
+                    : "bg-slate-950 border-slate-800 text-slate-500 opacity-60"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Blocks className="h-4 w-4" />
+                  <span>6. Anchored</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {isSelectedAnchored ? "Hardhat on-chain commit" : isSelectedFullyVerified ? "Ready to anchor" : "Locked"}
                 </p>
               </div>
             </div>
@@ -244,11 +328,34 @@ export default function TradesPage() {
 
             <div className="flex items-center gap-3">
               <Link
-                href={`/verification?trade_id=${selectedTrade.id}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors"
+                href={`/map?trade_id=${selectedTrade.id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs transition-colors"
+                title="View Energy Delivery Route on Microgrid Map"
               >
-                <PenTool className="h-3.5 w-3.5" />
-                <span>{isSelectedFullyVerified ? "Inspect Proof" : "Enter Signing Terminal"}</span>
+                <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+                <span>View on Map</span>
+              </Link>
+
+              <Link
+                href={`/verification?trade_id=${selectedTrade.id}`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors"
+              >
+                {isSelectedAnchored ? (
+                  <>
+                    <Blocks className="h-3.5 w-3.5" />
+                    <span>View Blockchain Proof</span>
+                  </>
+                ) : isSelectedFullyVerified ? (
+                  <>
+                    <Blocks className="h-3.5 w-3.5" />
+                    <span>Anchor on Blockchain</span>
+                  </>
+                ) : (
+                  <>
+                    <PenTool className="h-3.5 w-3.5" />
+                    <span>Enter Signing Terminal</span>
+                  </>
+                )}
               </Link>
             </div>
           </div>
@@ -292,13 +399,14 @@ export default function TradesPage() {
                 <th className="pb-3">Total Value</th>
                 <th className="pb-3">Feeder Zone</th>
                 <th className="pb-3">Status</th>
+                <th className="pb-3">Blockchain</th>
                 <th className="pb-3 text-right">Verification</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-mono text-slate-200">
               {trades.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500 font-sans">
+                  <td colSpan={9} className="py-6 text-center text-slate-500 font-sans">
                     No trades found for this account.
                   </td>
                 </tr>
@@ -308,6 +416,7 @@ export default function TradesPage() {
                   const counterpartyName = isUserBuyer ? trade.seller_name : trade.buyer_name;
                   const counterpartyRole = isUserBuyer ? "Prosumer (Seller)" : "Consumer (Buyer)";
                   const badge = getStatusBadge(trade.status);
+                  const blockchainBadge = getBlockchainBadge(trade);
 
                   return (
                     <tr
@@ -337,6 +446,11 @@ export default function TradesPage() {
                           {badge.label}
                         </span>
                       </td>
+                      <td className="py-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${blockchainBadge.classes}`}>
+                          {blockchainBadge.label}
+                        </span>
+                      </td>
                       <td className="py-3 text-right font-sans">
                         <Link
                           href={`/verification?trade_id=${trade.id}`}
@@ -344,7 +458,7 @@ export default function TradesPage() {
                           className="text-emerald-400 hover:underline inline-flex items-center gap-1 text-[11px] font-semibold"
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          {trade.status === "fully_verified" ? "Verify Receipt" : "Inspect / Sign"}
+                          {trade.status === "fully_verified" ? "Proof / Anchor" : "Inspect / Sign"}
                         </Link>
                       </td>
                     </tr>
@@ -356,5 +470,20 @@ export default function TradesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TradesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 rounded-2xl bg-slate-900 border border-slate-800 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+          <RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
+          <span>Loading trades ledger...</span>
+        </div>
+      }
+    >
+      <TradesPageContent />
+    </Suspense>
   );
 }

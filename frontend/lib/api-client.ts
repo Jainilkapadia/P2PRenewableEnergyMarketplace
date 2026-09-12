@@ -207,6 +207,14 @@ export const api = {
   getVerification: (tradeId: string) => fetchFromApi<any>(`/verification/verify/${tradeId}`),
   getAuditChain: () => fetchFromApi<any[]>("/verification/audit-chain"),
   
+  // Blockchain Anchor & Proof (Milestone 6)
+  anchorTrade: (tradeId: string) =>
+    fetchFromApi<BlockchainProofResponse>(`/verification/trades/${tradeId}/anchor`, {
+      method: "POST",
+    }),
+  getBlockchainProof: (tradeId: string) =>
+    fetchFromApi<BlockchainProofResponse>(`/verification/trades/${tradeId}/blockchain-proof`),
+
   // Reliability
   getReliability: (userId: string) => fetchFromApi<any>(`/reliability/${userId}`),
 
@@ -214,3 +222,26 @@ export const api = {
   getMarketOverview: () => fetchFromApi<any>("/analytics/overview"),
   getSolarForecast: () => fetchFromApi<any[]>("/analytics/forecast/solar"),
 };
+
+export interface BlockchainProofResponse {
+  trade_id: string;
+  verification_reference: string;
+  trade_canonical_hash: string;
+  blockchain_status: "unanchored" | "pending" | "anchored" | "failed" | string;
+  blockchain_tx_hash: string | null;
+  blockchain_block_number: number | null;
+  blockchain_contract_address: string | null;
+  blockchain_anchored_at: string | null;
+  is_on_chain_verified?: boolean | null;
+  on_chain_deal?: {
+    trade_id?: string;
+    verification_reference?: string;
+    trade_canonical_hash?: string;
+    energy_scaled?: number;
+    total_amount_scaled?: number;
+    anchored_at?: string;
+    block_number?: number;
+  } | null;
+  message?: string | null;
+  already_registered?: boolean;
+}
