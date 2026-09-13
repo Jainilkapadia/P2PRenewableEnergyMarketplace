@@ -175,6 +175,9 @@ CREATE TABLE notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX idx_notifications_user_read ON notifications (user_id, is_read);
+CREATE INDEX idx_notifications_user_created ON notifications (user_id, created_at DESC);
+
 CREATE TABLE disputes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,

@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.auth.routes import get_current_user
 from app.models import EnergyListing, User, ReliabilityScore
 from app.marketplace.schemas import EnergyListingCreate, EnergyListingUpdate, EnergyListingResponse
+from app.notifications.routes import create_user_notification
 
 router = APIRouter(prefix="/listings", tags=["Marketplace Listings"])
 
@@ -43,6 +44,18 @@ async def create_listing(
         status="active"
     )
     db.add(new_listing)
+    await db.flush()
+
+    # In-app notification for listing creator
+    await create_user_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Energy Listing Published",
+        message=f"Your listing for {float(new_listing.energy_available_kwh):.1f} kWh at ₹{float(new_listing.price_per_kwh):.2f}/kWh is now active on the Ahmedabad grid.",
+        notif_type="listing_created",
+        reference_id=new_listing.id
+    )
+
     await db.commit()
     await db.refresh(new_listing)
 

@@ -13,6 +13,7 @@ from app.requirements.schemas import (
     EnergyRequirementUpdate,
     EnergyRequirementResponse
 )
+from app.notifications.routes import create_user_notification
 
 router = APIRouter(prefix="/requirements", tags=["Consumer Energy Requirements"])
 
@@ -49,6 +50,18 @@ async def create_requirement(
         status="open"
     )
     db.add(new_req)
+    await db.flush()
+
+    # In-app notification for requirement creator
+    await create_user_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Requirement Registered",
+        message=f"Demand for {float(new_req.energy_required_kwh):.1f} kWh registered. The matching engine is scanning nearby prosumers.",
+        notif_type="requirement_created",
+        reference_id=new_req.id
+    )
+
     await db.commit()
     await db.refresh(new_req)
 

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth, UserRole } from "@/lib/auth-context";
 import { usePerspective } from "@/lib/perspective-context";
 import { formatINR } from "@/lib/utils";
+import { api, AppNotification } from "@/lib/api-client";
 import {
   Wallet,
   Bell,
@@ -18,13 +20,26 @@ import {
   User,
   ShieldCheck,
   CheckCircle2,
+  ArrowRight,
+  CheckCheck,
+  Clock,
+  Blocks,
+  FileCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Topbar() {
+  const router = useRouter();
   const { user, role, profile, logout } = useAuth();
   const { perspective, isDual, togglePerspective } = usePerspective();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  // Notification state (Milestone 10)
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [showNotifMenu, setShowNotifMenu] = useState<boolean>(false);
+  const [recentNotifs, setRecentNotifs] = useState<AppNotification[]>([]);
+  const [loadingNotifs, setLoadingNotifs] = useState<boolean>(false);
+  const notifDropdownRef = useRef<HTMLDivElement>(null);
 
   const getRoleTheme = (r: UserRole) => {
     switch (r) {
@@ -61,42 +76,147 @@ export function Topbar() {
   };
 
   const theme = getRoleTheme(role);
+  const RoleIcon = theme.icon;
+
+  // Fetch unread count
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await api.getUnreadNotificationCount();
+      if (typeof res?.unread_count === "number") {
+        setUnreadCount(res.unread_count);
+      }
+    } catch {
+      // Silently ignore network errors during background polling
+    }
+  }, []);
+
+  // Fetch latest notifications for dropdown
+  const fetchRecentNotifications = useCallback(async () => {
+    setLoadingNotifs(true);
+    try {
+      const list = await api.getNotifications({ limit: 4 });
+      if (Array.isArray(list)) {
+        setRecentNotifs(list);
+      }
+    } catch {
+      setRecentNotifs([]);
+    } finally {
+      setLoadingNotifs(false);
+    }
+  }, []);
+
+  // Polling interval ~15 seconds and refresh on focus/user change
+  useEffect(() => {
+    fetchUnreadCount();
+
+    const interval = setInterval(() => {
+      fetchUnreadCount();
+    }, 15000);
+
+    const handleFocus = () => {
+      fetchUnreadCount();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [fetchUnreadCount, user]);
+
+  const handleToggleNotifMenu = () => {
+    if (!showNotifMenu) {
+      fetchRecentNotifications();
+      fetchUnreadCount();
+    }
+    setShowNotifMenu(!showNotifMenu);
+    setShowProfileMenu(false);
+  };
+
+  const handleMarkAllRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.markAllNotificationsAsRead();
+      setUnreadCount(0);
+      setRecentNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.error("Failed to mark all as read:", err);
+    }
+  };
+
+  const handleNotificationClick = async (notif: AppNotification) => {
+    setShowNotifMenu(false);
+    if (!notif.is_read) {
+      try {
+        await api.markNotificationAsRead(notif.id);
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch {}
+    }
+
+    if (notif.reference_id) {
+      if (
+        notif.type.includes("trade") ||
+        notif.type.includes("signed") ||
+        notif.type.includes("verification") ||
+        notif.type.includes("blockchain")
+      ) {
+        router.push(`/verification?trade_id=${notif.reference_id}`);
+        return;
+      }
+      if (notif.type === "listing_created") {
+        router.push("/listings");
+        return;
+      }
+      if (notif.type === "requirement_created") {
+        router.push("/requirements");
+        return;
+      }
+    }
+    router.push("/notifications");
+  };
+
+  const formatRelativeTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      const diffMs = Date.now() - date.getTime();
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      return `${Math.floor(diffHours / 24)}d ago`;
+    } catch {
+      return "Recently";
+    }
+  };
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-[#080d1a]/90 backdrop-blur sticky top-0 z-20 px-4 md:px-6 flex items-center justify-between gap-4">
-      {/* Left: Authenticated Node Identity & Dual Mode Controls */}
+    <header className="h-16 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
+      {/* Left: Role Indicator & Dual Mode Switcher */}
       <div className="flex items-center gap-3">
-        {/* Authenticated User Role Badge */}
         <div className="flex items-center gap-2">
-          <div
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold shadow-sm",
-              theme.badgeClass
-            )}
-          >
-            <theme.icon className="h-3.5 w-3.5" />
-            <span className="font-semibold text-slate-100">{user?.full_name || profile?.name}</span>
-            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-950/60 border border-slate-700 text-slate-300">
-              {role}
-            </span>
+          <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border", theme.badgeClass)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full animate-pulse", theme.dotColor)} />
+            <RoleIcon className="h-3.5 w-3.5" />
+            <span>{theme.label}</span>
           </div>
 
-          {/* If the single authenticated user has a DUAL role, allow toggling view perspective between Buy and Sell */}
+          {/* Dual Role Perspective Toggle */}
           {isDual && (
             <button
               onClick={togglePerspective}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-[11px] font-medium transition-colors"
-              title="Toggle view mode within your Dual account"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 hover:border-indigo-500/50 text-slate-300 hover:text-indigo-300 text-xs font-medium transition-colors"
+              title="Switch Perspective between Buying and Selling modes"
             >
-              <span className="text-slate-400">View:</span>
-              <span className="capitalize font-semibold text-indigo-300">{perspective} Mode</span>
+              <span>Mode:</span>
+              <span className="font-bold text-indigo-400 capitalize">{perspective}</span>
+              <span className="text-[10px] text-slate-500">(Click to switch)</span>
             </button>
           )}
         </div>
 
-        {/* Substation Badge */}
-        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/60 border border-slate-800 text-[11px] font-mono text-slate-300">
-          <span className={cn("h-2 w-2 rounded-full", theme.dotColor)} />
+        {/* Substation Feeder Metadata */}
+        <div className="hidden md:flex items-center gap-2 text-xs font-mono text-slate-500 pl-2 border-l border-slate-800">
           <span>Feeder: {user?.grid_substation_id || profile?.substation || "AHMEDABAD_SUB_ZONE_1"}</span>
         </div>
       </div>
@@ -124,20 +244,129 @@ export function Topbar() {
           )}
         </Link>
 
-        {/* Notification Bell */}
-        <Link
-          href="/notifications"
-          className="relative p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors"
-          title="Notifications"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-400"></span>
-        </Link>
+        {/* Notification Bell with Dynamic Unread Badge & Dropdown */}
+        <div className="relative" ref={notifDropdownRef}>
+          <button
+            onClick={handleToggleNotifMenu}
+            className={cn(
+              "relative p-2 rounded-lg bg-slate-900 border transition-all",
+              showNotifMenu
+                ? "border-emerald-500/60 text-slate-100 bg-slate-850"
+                : "border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+            )}
+            title="Grid Notifications"
+            aria-label="Grid Notifications"
+          >
+            <Bell className="h-4 w-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-slate-950 font-mono font-black text-[10px] flex items-center justify-center border-2 border-slate-950 shadow-md">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Notifications Dropdown Preview */}
+          {showNotifMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => setShowNotifMenu(false)}
+              />
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-0 z-40 overflow-hidden">
+                {/* Dropdown Header */}
+                <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                      Grid Notifications
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        {unreadCount} new
+                      </span>
+                    )}
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors font-medium"
+                    >
+                      <CheckCheck className="h-3 w-3" />
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                {/* Notifications Preview List */}
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+                  {loadingNotifs ? (
+                    <div className="p-6 text-center text-xs text-slate-500 space-y-2">
+                      <div className="h-3 bg-slate-800 rounded animate-pulse w-3/4 mx-auto" />
+                      <div className="h-3 bg-slate-800 rounded animate-pulse w-1/2 mx-auto" />
+                    </div>
+                  ) : recentNotifs.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500">
+                      <CheckCircle2 className="h-6 w-6 text-slate-600 mx-auto mb-1.5" />
+                      <p>No new grid notifications</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5">All trade signatures and anchors are synced.</p>
+                    </div>
+                  ) : (
+                    recentNotifs.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={cn(
+                          "w-full text-left p-3 hover:bg-slate-850/80 transition-colors flex items-start gap-2.5",
+                          !n.is_read && "bg-slate-900/90 border-l-2 border-emerald-400"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "h-2 w-2 rounded-full mt-1.5 shrink-0",
+                            !n.is_read ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-slate-700"
+                          )}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={cn("text-xs truncate font-medium", !n.is_read ? "text-slate-100 font-semibold" : "text-slate-300")}>
+                              {n.title}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                              {formatRelativeTime(n.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5 leading-relaxed">
+                            {n.message}
+                          </p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                {/* Dropdown Footer */}
+                <div className="p-2 border-t border-slate-800 bg-slate-950/70 text-center">
+                  <Link
+                    href="/notifications"
+                    onClick={() => setShowNotifMenu(false)}
+                    className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-emerald-400 hover:text-emerald-300 py-1 transition-colors w-full"
+                  >
+                    <span>View all notifications</span>
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Profile Details & Logout Menu */}
         <div className="relative">
           <button
-            onClick={() => setShowProfileMenu(!showProfileMenu)}
+            onClick={() => {
+              setShowProfileMenu(!showProfileMenu);
+              setShowNotifMenu(false);
+            }}
             className="flex items-center gap-2.5 p-1 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors"
           >
             <div className="hidden sm:flex flex-col text-right">

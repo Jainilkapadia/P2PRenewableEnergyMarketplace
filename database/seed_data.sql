@@ -38,17 +38,25 @@ VALUES
     ('44444444-4444-4444-4444-444444444444', 'b2a09c2a5796a30fb7bb27a8105d15a5198dd9ecb7e289fbfa816999a38ff13a', 'Ed25519', TRUE)
 ON CONFLICT DO NOTHING;
 
--- Seed Energy Listings (Ahmedabad Locations)
+-- Seed Energy Listings (Ahmedabad Locations - 30-Day Hackathon Window)
 INSERT INTO energy_listings (id, prosumer_id, title, energy_available_kwh, energy_remaining_kwh, price_per_kwh, available_from, available_to, source_type, location, grid_substation_id, status)
 VALUES
-    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'Bodakdev Solar Rooftop Surplus (5.5kW Array)', 35.00, 35.00, 5.8000, NOW() - INTERVAL '1 hour', NOW() + INTERVAL '8 hours', 'solar_rooftop', ST_SetSRID(ST_MakePoint(72.5122, 23.0384), 4326), 'AHMEDABAD_SUB_ZONE_1', 'active'),
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '33333333-3333-3333-3333-333333333333', 'Prahlad Nagar Clean Solar & Battery Buffer', 50.00, 50.00, 6.2000, NOW() - INTERVAL '2 hours', NOW() + INTERVAL '10 hours', 'solar_battery', ST_SetSRID(ST_MakePoint(72.5074, 23.0118), 4326), 'AHMEDABAD_SUB_ZONE_1', 'active'),
-    ('cccccccc-cccc-cccc-cccc-cccccccccccc', '44444444-4444-4444-4444-444444444444', 'Science City High-Efficiency Microgrid Solar Output', 80.00, 80.00, 5.4000, NOW(), NOW() + INTERVAL '12 hours', 'microgrid_solar', ST_SetSRID(ST_MakePoint(72.5060, 23.0780), 4326), 'AHMEDABAD_SUB_ZONE_2', 'active')
-ON CONFLICT (id) DO NOTHING;
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'Bodakdev Solar Rooftop Surplus (5.5kW Array)', 35.00, 35.00, 5.8000, NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', 'solar_rooftop', ST_SetSRID(ST_MakePoint(72.5122, 23.0384), 4326), 'AHMEDABAD_SUB_ZONE_1', 'active'),
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '33333333-3333-3333-3333-333333333333', 'Prahlad Nagar Clean Solar & Battery Buffer', 50.00, 50.00, 6.2000, NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', 'solar_battery', ST_SetSRID(ST_MakePoint(72.5074, 23.0118), 4326), 'AHMEDABAD_SUB_ZONE_1', 'active'),
+    ('cccccccc-cccc-cccc-cccc-cccccccccccc', '44444444-4444-4444-4444-444444444444', 'Science City High-Efficiency Microgrid Solar Output', 80.00, 80.00, 5.4000, NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', 'microgrid_solar', ST_SetSRID(ST_MakePoint(72.5060, 23.0780), 4326), 'AHMEDABAD_SUB_ZONE_2', 'active')
+ON CONFLICT (id) DO UPDATE SET
+    available_from = EXCLUDED.available_from,
+    available_to = EXCLUDED.available_to,
+    energy_remaining_kwh = EXCLUDED.energy_remaining_kwh,
+    status = EXCLUDED.status;
 
--- Seed Energy Requirements (Ahmedabad Locations)
+-- Seed Energy Requirements (Ahmedabad Locations - 30-Day Hackathon Window)
 INSERT INTO energy_requirements (id, consumer_id, title, energy_required_kwh, max_price_per_kwh, required_from, required_to, max_radius_km, min_seller_reliability, location, grid_substation_id, preferred_substation_only, status)
 VALUES
-    ('dddddddd-dddd-dddd-dddd-dddddddddddd', '22222222-2222-2222-2222-222222222222', 'EV Charging & Daytime Household Clean Demand', 25.00, 7.0000, NOW(), NOW() + INTERVAL '6 hours', 15.00, 85.00, ST_SetSRID(ST_MakePoint(72.5611, 23.0365), 4326), 'AHMEDABAD_SUB_ZONE_1', FALSE, 'open')
-ON CONFLICT (id) DO NOTHING;
+    ('dddddddd-dddd-dddd-dddd-dddddddddddd', '22222222-2222-2222-2222-222222222222', 'EV Charging & Daytime Household Clean Demand', 25.00, 7.0000, NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', 15.00, 85.00, ST_SetSRID(ST_MakePoint(72.5611, 23.0365), 4326), 'AHMEDABAD_SUB_ZONE_1', FALSE, 'open')
+ON CONFLICT (id) DO UPDATE SET
+    required_from = EXCLUDED.required_from,
+    required_to = EXCLUDED.required_to,
+    status = EXCLUDED.status;
+
 

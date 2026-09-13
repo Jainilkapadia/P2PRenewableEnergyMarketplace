@@ -27,6 +27,7 @@ from app.verification.schemas import (
     BlockchainProofResponse
 )
 from app.verification.blockchain_service import blockchain_service, BlockchainServiceError
+from app.notifications.routes import create_user_notification
 
 router = APIRouter(prefix="/verification", tags=["Cryptographic Verification & Proof"])
 
@@ -199,6 +200,24 @@ async def check_and_finalize_dual_verification(trade: Trade, verification: Trade
         verification.audit_chain_previous_hash = prev_hash
         verification.current_block_hash = block_hash
 
+        # Notify BOTH buyer and seller of full cryptographic seal
+        await create_user_notification(
+            db=db,
+            user_id=trade.buyer_id,
+            title="Trade Digitally Verified & Sealed",
+            message="Both Ed25519 signatures were verified. The audit-chain proof has been sealed.",
+            notif_type="trade_verified",
+            reference_id=trade.id
+        )
+        await create_user_notification(
+            db=db,
+            user_id=trade.seller_id,
+            title="Trade Digitally Verified & Sealed",
+            message="Both Ed25519 signatures were verified. The audit-chain proof has been sealed.",
+            notif_type="trade_verified",
+            reference_id=trade.id
+        )
+
 @router.post("/keys/register")
 async def register_public_key(
     key_in: KeyRegister,
@@ -291,6 +310,24 @@ async def buyer_sign_trade(
     if trade.status in ["matched", "pending_signatures"]:
         trade.status = "buyer_signed"
 
+    # Notify Seller and Buyer
+    await create_user_notification(
+        db=db,
+        user_id=trade.seller_id,
+        title="Buyer Signed Trade",
+        message=f"Buyer {current_user.full_name} completed the Ed25519 signature. Your countersignature is now required.",
+        notif_type="buyer_signed",
+        reference_id=trade.id
+    )
+    await create_user_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Signature Verified",
+        message="Your Ed25519 signature for this trade was verified successfully.",
+        notif_type="signature_verified",
+        reference_id=trade.id
+    )
+
     await check_and_finalize_dual_verification(trade, verification, db)
 
     await db.commit()
@@ -367,6 +404,24 @@ async def seller_sign_trade(
 
     if trade.status in ["matched", "pending_signatures"]:
         trade.status = "seller_signed"
+
+    # Notify Buyer and Seller
+    await create_user_notification(
+        db=db,
+        user_id=trade.buyer_id,
+        title="Seller Countersigned Trade",
+        message=f"Seller {current_user.full_name} signed the trade. Dual verification is proceeding.",
+        notif_type="seller_signed",
+        reference_id=trade.id
+    )
+    await create_user_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Signature Verified",
+        message="Your Ed25519 signature for this trade was verified successfully.",
+        notif_type="signature_verified",
+        reference_id=trade.id
+    )
 
     await check_and_finalize_dual_verification(trade, verification, db)
 
@@ -635,6 +690,25 @@ async def anchor_trade_to_blockchain(
         if anchor_res.get("blockchain_anchored_at"):
             verification.blockchain_anchored_at = anchor_res["blockchain_anchored_at"]
 
+        # Notify BOTH Buyer and Seller of confirmed blockchain anchor
+        trade_prefix = str(trade.id)[:8]
+        await create_user_notification(
+            db=db,
+            user_id=trade.buyer_id,
+            title="Blockchain Anchor Confirmed",
+            message=f"Trade {trade_prefix} was immutably anchored on the EnergyDealRegistry.",
+            notif_type="blockchain_anchored",
+            reference_id=trade.id
+        )
+        await create_user_notification(
+            db=db,
+            user_id=trade.seller_id,
+            title="Blockchain Anchor Confirmed",
+            message=f"Trade {trade_prefix} was immutably anchored on the EnergyDealRegistry.",
+            notif_type="blockchain_anchored",
+            reference_id=trade.id
+        )
+
         await db.commit()
         await db.refresh(verification)
 
@@ -656,6 +730,14 @@ async def anchor_trade_to_blockchain(
     except BlockchainServiceError as e:
         # Graceful failure handling: Do NOT invalidate Milestone 5 trade verification
         verification.blockchain_status = "failed"
+        await create_user_notification(
+            db=db,
+            user_id=current_user.id,
+            title="Blockchain Anchor Notice",
+            message="On-chain anchoring encountered an RPC delay or failure. Off-chain digital verification remains valid.",
+            notif_type="blockchain_anchor_failed",
+            reference_id=trade.id
+        )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -663,6 +745,14 @@ async def anchor_trade_to_blockchain(
         )
     except Exception as e:
         verification.blockchain_status = "failed"
+        await create_user_notification(
+            db=db,
+            user_id=current_user.id,
+            title="Blockchain Anchor Notice",
+            message="On-chain anchoring encountered an RPC delay or failure. Off-chain digital verification remains valid.",
+            notif_type="blockchain_anchor_failed",
+            reference_id=trade.id
+        )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

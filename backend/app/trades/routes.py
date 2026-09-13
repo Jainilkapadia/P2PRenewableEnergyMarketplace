@@ -13,6 +13,7 @@ from app.models import (
     Wallet, WalletTransaction, Notification
 )
 from app.trades.schemas import TradeInitiateRequest, TradeResponse
+from app.notifications.routes import create_user_notification
 
 router = APIRouter(prefix="/trades", tags=["Trading & Orderbook"])
 
@@ -110,15 +111,23 @@ async def initiate_trade(
     )
     db.add(verification)
 
-    # 7. Create In-App Notification for Seller
-    notif = Notification(
+    # 7. Create In-App Notifications for Seller and Buyer
+    await create_user_notification(
+        db=db,
         user_id=listing.prosumer_id,
         title="Trade Match Initiated — Signature Required",
-        message=f"Buyer {current_user.full_name} initiated a trade for {req.energy_amount_kwh} kWh at ${req.unit_price:.4f}/kWh.",
-        type="sign_required",
+        message=f"Buyer {current_user.full_name} initiated a trade for {req.energy_amount_kwh} kWh at ₹{req.unit_price:.2f}/kWh. Your signature is required.",
+        notif_type="trade_initiated",
         reference_id=new_trade.id
     )
-    db.add(notif)
+    await create_user_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Trade Initiated & Escrow Locked",
+        message=f"Your trade for {req.energy_amount_kwh} kWh is active and ₹{total_cost:.2f} has been held in escrow.",
+        notif_type="trade_initiated",
+        reference_id=new_trade.id
+    )
 
     await db.commit()
     await db.refresh(new_trade)

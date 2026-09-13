@@ -32,6 +32,7 @@ async def ensure_schema_compatibility():
             await conn.execute(text("ALTER TABLE trade_verifications ADD COLUMN IF NOT EXISTS blockchain_contract_address VARCHAR(42);"))
             await conn.execute(text("ALTER TABLE trade_verifications ADD COLUMN IF NOT EXISTS blockchain_anchored_at TIMESTAMPTZ;"))
             await conn.execute(text("ALTER TABLE trade_verifications ADD COLUMN IF NOT EXISTS blockchain_status VARCHAR(20) NOT NULL DEFAULT 'unanchored';"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications (user_id, is_read);"))
     except Exception as e:
         # Pass silently if database connection is offline during unit testing without live DB
         pass

@@ -228,7 +228,36 @@ export const api = {
     const qs = query.toString();
     return fetchFromApi<SolarForecastPoint[]>(`/analytics/forecast/solar${qs ? `?${qs}` : ""}`);
   },
+
+  // Notifications (Milestone 10)
+  getNotifications: (params?: { unread_only?: boolean; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.unread_only) query.set("unread_only", "true");
+    if (params?.limit) query.set("limit", params.limit.toString());
+    const qs = query.toString();
+    return fetchFromApi<AppNotification[]>(`/notifications/${qs ? `?${qs}` : ""}`);
+  },
+  getUnreadNotificationCount: () =>
+    fetchFromApi<{ unread_count: number }>("/notifications/unread-count"),
+  markNotificationAsRead: (notificationId: string) =>
+    fetchFromApi<{ message: string; id: string }>(`/notifications/${notificationId}/read`, {
+      method: "PUT",
+    }),
+  markAllNotificationsAsRead: () =>
+    fetchFromApi<{ message: string; marked_count: number }>("/notifications/mark-all-read", {
+      method: "PUT",
+    }),
 };
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  reference_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 export interface MarketOverviewStats {
   total_volume_traded_kwh: number;
